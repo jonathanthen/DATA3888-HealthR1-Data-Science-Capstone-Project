@@ -1,0 +1,668 @@
+---
+title: "What is the relationship between total new cases or government response with various political, social and economic (PSE) factors?"
+author: "Student SIDs: 480375656, 480388379, 490605077, 490477739"
+subtitle: "DATA3888 Report | Group Health_R1"
+date: "8 June 2021"
+
+output:
+  html_document:
+    fig_caption: yes
+    number_sections: yes
+    self_contained: yes
+    theme: flatly
+
+    css: 
+      - https://use.fontawesome.com/releases/v5.0.6/css/all.css
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: hide
+    
+---
+
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 15px;
+  }
+h1.title {
+  font-size: 25px;
+  color: DarkRed;
+}
+h4.author {
+  font-size: 15px;
+}
+h1 { /* Header 1 */
+  font-size: 20px;
+  color: DarkBlue;
+}
+h2 { /* Header 2 */
+    font-size: 17px;
+  color: DarkBlue;
+}
+h3 { /* Header 2 */
+    font-size: 16px;
+  color: DarkBlue;
+}
+h3.subtitle { /* Header 2 */
+    font-size: 20px;
+  color: DarkBlue;
+}
+
+</style>
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(python.reticulate = FALSE)
+
+library(kohonen)
+library(tidyverse)
+library(reshape2)
+library(plotly)
+library(cluster)
+library(factoextra)
+library(ggplot2)
+
+set.seed(123)
+```
+[Project Github Repository](https://github.sydney.edu.au/dwan8443/DATA3888_HealthR_1)
+
+
+```{r, echo=FALSE, out.width = '100%'}
+knitr::include_graphics("shiny_app_vis/www/banner.png")
+```
+
+# Executive Summary
+
+The COVID-19 pandemic, in its ongoing 1.5 year span, has radically changed many ways of life, and inflicted many casualties globally. To safeguard our future in preparing for similar crises in the future, this report investigates the indicators of a country’s response to COVID, stratified by political, social, and economic factors. 
+
+We find that most countries had similar experiences with Covid to varying magnitudes, and there are a select few which handled the pandemic exceptionally poorly. The behaviour of countries based on stringency is associated with their broad geographic region, potentially due to COVID cases spreading across borders or similarity in government response between neighbouring countries. The political, social and economic implications of the clusters are inconclusive without consulting experts due to high variability in the PSE values within each cluster.
+
+The analysis aims to assist Social and Political scientists in understanding the different governments responses to COVID-19, and how they differ between countries within their respective cluster groups. This would be useful in supplementing their research through identification of trends in PSE factor groups.
+
+
+---
+
+# Background
+
+This project aims to uncover insights about the relationship between new cases or government response with various Political, Social and Economic (PSE) factors. The motivation is to understand the impact of PSE factors on how countries respond to the COVID pandemic, in order to understand how these countries will respond to crises in the future. The combination of multiple disciplines concerning the fields of epidemiology, politics, sociology and economics extends our knowledge of the COVID-19 crisis to more than a disease, but rather an overarching global phenomenon that helps us understand the behaviours of different countries as well as predict future crises.
+
+## Innovation
+
+The innovation of this project lies in the exploration of the intuitive reasons behind how countries respond to the COVID-19 pandemic in terms of PSE factors. Results from the investigation are visualised in the form of SOM diagrams, world maps, bubble charts and interactive maps, such that a variety of visualisations are available for interpretation in an easily-consumable form.
+
+## Target Audience
+
+The target audience for this project are Social and Political scientists in industry and academia, including social epidemiologists, the UN, the World Bank, the Institute for Health Metrics and Evaluation (IHME), the Sydney Social Sciences and Humanities Advanced Research Centre.
+
+## Data Sources
+The epidemiology, demographics and economy data in this project are from the [COVID-19 Open Data github repository](https://github.com/GoogleCloudPlatform/covid-19-open-data) [[1]](#ref) collated by Google Cloud Platform from reputable sources including DataCommons, Eurostat, WorldBank, Our World in Data, WHO, etc.:
+
+* index.csv - Country names and codes used for joining datasets.
+* demographics.csv - Population statistics for every country.
+* economy.csv - Economic indicators for every country.
+* epidemiology.csv - Epidemiological timeseries data, including number of new cases and deaths, total confirmed cases and deaths.
+* oxford-government-response.csv - Timeseries stringency data for every country. 
+
+The political system data is from the ['List of countries by system of government' Wikipedia page](https://en.wikipedia.org/wiki/List_of_countries_by_system_of_government) [[2]](#ref), collated from [Bertelsmann Transformation Index 2012](http://www.bti-project.org/) [[3]](#ref) and [Historical Atlas of the Twentieth Century](http://users.erols.com/mwhite28/20centry.htm) [[4]](#ref).
+
+---
+
+# Methodology
+
+## Data Collection & Cleaning
+
+The credibility of the data is verified by the trustworthy sources, including world renowned databases such as the World Bank, Our World in Data, WHO etc.
+
+The validity of the data is justified by the high relevance to our project, comprising up-to-date timeseries COVID data and data on PSE factors of interest.
+
+Datasets are merged by joining on country code or name (see [Appendix #1](#appendix_1)), followed by data cleaning (see [Appendix #2](#appendix_2)):
+
+* Eliminate countries with trivial data
+* NA's are imputed as 0's or forward filled to preserve general trend in the data
+* Negative values are imputed as 0's as most of the adjustments affect less than 10 cases
+
+## Cluster World Map Visualisation
+
+The clusters formed based on either new confirmed cases or stringency index are visualised as two world maps drawn using ggplotly. Countries in each cluster or subgroup are distinguished by colour.
+
+* 'SOM Cluster World Map' plots the distribution of countries in each cluster. 
+* 'SOM Cluster Subgroup Map' selects countries from one particular cluster, from which a PSE factor is mapped. This shows the range of GDP per capita, population and political systems within each cluster.
+
+## Interactive Map
+
+An interactive map was created to simplify the viewing experience, by providing users with an overview of the relevant data sources (including new cases, stringency index and cluster groups) from a global perspective. The interactive element comes from the ability to pan and zoom, select different map types, choose to show cluster groups, and view the global change in data over time (through a play button) as the pandemic progresses. In addition, users may hover over specific countries and view detailed information including the political system, population, cases, stringency index and cluster group. 
+
+## Bubble Charts
+The reason we settled on using the bubble chart [Figure 1] is because we wanted to represent the political, social and economic information into a visualization. We had to effectively display these three variables into one concise visualization so that our consumers are able to draw conclusions based on the location, size and color of each bubble. For the ‘New Confirmed Cases’ cluster graph, we decided to look at the maximum stringency, percentage of infected population, constitutional form and GDP per capita. As for the ‘Stringency Index’ cluster graph, we decided to look at the percentage of deceased population, percentage of infected population, constitutional form and GDP per capita. In both instances, we wanted to determine if there was any relationship between countries of varying political governance and economic statuses and how they handled the COVID-19 pandemic.
+
+```{r, out.width = "100%"}
+cov_clusters <- read.csv("data/merged_covid_clusters.csv")
+
+pse_graph = cov_clusters %>%
+            filter(value_col == "new_confirmed") %>%
+            filter(som_cluster == 1) %>%
+            group_by(country_name) %>%
+            mutate(max_total = max(total_confirmed),
+                   max_stringency = max(stringency_index),
+                   perc_infected_pop = max_total/population) %>%
+            arrange(desc(gdp_per_capita)) %>%
+            ggplot(aes(country_name = country_name, x=perc_infected_pop, y=max_stringency, size=gdp_per_capita, color=constitutional_form)) +
+            geom_point(alpha=1) +
+            scale_size(range = c(.5, 12), name="GDP Per Capita") + 
+            scale_color_brewer(palette = "Paired") + 
+            xlab("Percentage of Infected Population") +
+            ylab("Maximum Stringency") +
+            labs(color = "Constitutional Form") +
+            scale_x_continuous(limits = c(0, 0.2)) + 
+            scale_y_continuous(limits = c(0, 100)) +
+            ggtitle("Figure 1: PSE Factor Bubble Chart")
+
+pse_graph
+```
+
+## Silhouette Method
+In the preliminary exploratory stages, we needed to find out what the most optimal number of clusters were before we could start clustering the countries. Our group decided to look into the more popular methods such as gap statistic, elbow method and finally settled on the Silhouette method. The Silhouette method computes the average silhouette of observations for different values of k and the most optimal number of clusters is the one that maximizes the average silhouette over a range of possible values of k. We implemented it on our initial clustering algorithm, hierarchical clustering, which resulted in an optimal number of 6 clusters. This corroborated well with the number of clusters suggested by our self-organizing maps. Refer to [Appendix #3](#appendix_3) for the graph of Silhouette method.
+
+## Self Organising Maps
+
+To generate the clusters of similar countries, we use Self Organising Maps (SOM), which are a form of artificial neural network. SOMs take the dataset and maps data points to nodes based on similarity, with adjacent nodes being more similar to each other than further nodes.  
+
+SOMs was picked over other clustering methods like BIRCH clustering and kmeans clustering because it inherently reduces the dimensionality of the dataset into two dimensions, whereas a custom distance measure needs to be defined for the other methods. SOMs also have built-in cluster optimisation, with set rules on how large/small to make the grid, which reduces the amount of multiple testing involved in trying different numbers of clusters in the other methods, which would have increased the chance of seeing a good result by luck. 
+
+The SOM model itself is a 4x4 grid with hexagonal topology because we expect moderately high similarity across countries. Using the distances generated from the model, we can consolidate the nodes to get final clusters, which is visualised below [Figure 2]. Due to how small the plot is, we will only label a subset of the countries. 
+
+
+```{r, out.width = "100%"}
+# read in COVID data
+cov_data <- read.csv("data/data_smoothed_standardised.csv")
+cov_data$date <- as.Date(cov_data$date)
+
+# SOMs require the data to be in a matrix form, so we need to reshape the data with `dcast`.
+VALUE_COL = "new_confirmed_smooth"  # Name of the column to cluster on
+
+# Filter for the value col and turn into a matrix
+data2 <- cov_data[c("date", "country_name", VALUE_COL)]
+country_matrix <- dcast(data2, country_name ~ date, value.var=VALUE_COL)
+country_matrix[is.na(country_matrix)] <- 0
+
+rownames(country_matrix) <- country_matrix$country_name
+country_matrix <- subset(country_matrix, select=-country_name)
+
+
+## Code referencing: https://clarkdatalabs.github.io/soms/SOM_Shakespeare_Part_1
+## and https://www.r-bloggers.com/2014/02/self-organising-maps-for-customer-segmentation-using-r/
+
+som_model <- som(
+  as.matrix(country_matrix), 
+  grid=somgrid(xdim = 4, ydim=4, 
+               topo="hexagonal"), 
+  rlen=100, 
+  alpha=c(0.05,0.01), 
+  keep.data = TRUE)
+
+ # Cut at 6 neighbours and join with og names
+som_cluster <- cutree(hclust(dist(som_model$codes[[1]])), 6)
+country_clusters <- data.frame(
+  rownames(country_matrix), som_model$unit.classif
+)
+
+# Map nodes to cluster numbers
+c_mappings <- data.frame(som_cluster)
+c_mappings$node_name = sapply(rownames(c_mappings), substring, 2,) 
+c6_clusters <- merge(country_clusters, c_mappings,
+                       by.x="som_model.unit.classif",
+                       by.y="node_name")
+colnames(c6_clusters) <- c("som_node", "country_name", "som_cluster")
+
+# Extract original country name with spaces
+c6_clusters$country_name <- gsub("\\.", " ",
+                                 c6_clusters$country_name)
+  
+# Define some countries to plot
+to_plot <- c("United States of America", 
+             "Italy", "Iran", "France", "Australia", "New Zealand",
+             "India", "Brazil", "China", "South Korea", "Japan", "United Kingdom", "Russia", "Sweden")
+
+filtered_labels <- c()
+X <- as.vector(sort(unique(c6_clusters$country_name)))
+for (i in 1:length(X)) {
+  if (X[i] %in% to_plot) { filtered_labels[i] <- X[i] }
+  else { filtered_labels[i] <-"." }
+}
+
+plot(som_model, type="mapping",  main = "Figure 2: SOM Clusters",
+     bgcol = rainbow(6)[som_cluster],
+     cex=0.8
+     , labels=filtered_labels
+)
+add.cluster.boundaries(som_model, som_cluster)
+```
+
+Each cluster is coloured differently, with the dark lines representing the borders of each cluster. Here, the USA and UK have similar behaviours in one cluster. 
+
+This step was repeated for each value to cluster on (new cases in various forms, and stringency index). A function automating this is in [Appendix #4](#appendix_4).
+
+---
+
+# Evaluation Strategy
+
+Given the nature of the pandemic, we have a strong prior for how certain countries have performed, and will use it to sanity check our clusters are valid. For example, anecdotally we know New Zealand kept cases very low throughout the pandemic, whereas the USA spiraled more out of control, so we expect to see these patterns reflected in the clusters. 
+
+For this, we plot the new cases/stringency over time for all countries in the same cluster, and visually inspect plots to ensure they are reasonably distinct from other clusters and similar to each other. 
+
+---
+
+# Results
+
+## Clusters
+
+```{r}
+# Read in cached clusters for performance
+cluster6_cache <- read.csv("data/c6_country_clusters_cache.csv")
+cluster6_cache <- cluster6_cache[cluster6_cache$value_col %in% c("new_confirmed_smooth", "stringency_index"), c('country_name', 'som_cluster', 'value_col')]
+
+cov_data_subset <- cov_data %>% select(date, country_name, new_confirmed_smooth, stringency_index)
+
+cluster_df <- merge(x=cov_data_subset, 
+                    y=cluster6_cache, by="country_name")
+```
+
+
+### Clustering on New Cases
+
+Examining the clusters on smoothed cases, we find the following 6 clusters of countries [Figure 3]. Key observations to note:
+
+1. There is a universal covid experience, where almost all countries experienced waves of cases which increase in their peaks near the end of 2020-- this is seen by the shape of the curves looking very similar.This may be attributable to the variations of COVID which arose at that time.
+2. Despite similar looking curves, different countries experienced different magnitudes of covid. Cluster 4 (USA, Brazil, India) was the worst cluster, with peaks of 100k or 200k.
+3. There is high imbalance in the countries in each cluster, which suggests the clusters are skewed by a select few outlier countries which performed very poorly. For this reason, cluster 1 and 2 may be interpreted as a baseline normal for how countries handled covid, and clusters 3-6 are the negative case studies.
+
+
+```{r, warning=FALSE, out.width = "100%"}
+
+clusters_cases_plot <- ggplot(cluster_df %>% filter(
+  value_col == "new_confirmed_smooth"
+), 
+  aes_string(x = "date", y = "new_confirmed_smooth", group = "country_name", color = "country_name")) +
+    geom_line(lwd = 1) +
+    theme_bw() +
+    ylab("Number of new cases") +
+    scale_y_continuous(labels = scales::comma) +
+    scale_x_date(date_breaks = "1 month") +
+    theme(axis.text.x = element_text(angle = 90)) +
+    labs(color = "Country/Region") +
+    xlab("") +
+  facet_wrap(~ som_cluster) +
+        ggtitle("Figure 3: Clusters on New Cases")
+
+plotly::ggplotly(clusters_cases_plot)
+```
+
+
+### Clustering on Stringency
+
+Clustering on Stringency [Figure 4], we find that all countries were vigilant in March 2020, with spikes in stringency up to the 80-100. From June onwards, stringency behaviour deviates. 
+
+Clusters 5 and 6 (e.g. New Zealand) steadily decrease, Cluster 1 (e.g. Sweden) decreases and then increases at the end of 2020, reflecting a new wave of cases. Cluster 4 has a tendency for stringency to stay high. Cluster 3 effectively didn't change stringency much.
+
+```{r, out.width = "100%"}
+
+clusters_stringency_plot <- ggplot(cluster_df %>% filter(
+  value_col == "stringency_index"
+), 
+  aes_string(x = "date", y = "stringency_index", group = "country_name", color = "country_name")) +
+    geom_line(lwd = 1) +
+    theme_bw() +
+    ylab("Stringency Index") +
+    scale_y_continuous(labels = scales::comma) +
+    scale_x_date(date_breaks = "1 month") +
+    theme(axis.text.x = element_text(angle = 90)) +
+    labs(color = "Country/Region") +
+    xlab("") +
+  facet_wrap(~ som_cluster) +
+        ggtitle("Figure 4: Clusters on Stringency Index")
+
+plotly::ggplotly(clusters_stringency_plot)
+```
+
+
+## Cluster World Map Visualisation
+
+In the 'SOM Cluster World Map' [Figure 5], the behaviour of countries based on government stringency is broken up by broad geographic region, namely the Americas (cluster 4), Europe (cluster 1) and Asia-Pacific (cluster 2). Possible reasons for this include the spread of cases across borders, or governments following the lead of their neighbours.
+
+```{r, out.width = "100%"}
+      world_map <- map_data("world")
+      
+      # change names so the countries in world map and the dataset match
+      world_map <- world_map %>%
+        mutate(region = replace(region, region == "UK","United Kingdom")) %>%
+        mutate(region = replace(region, region == "USA","United States of America"))
+
+      breaks <- c(0, 1^c(1:12))
+      
+      # read in stringency cluster data from the cache for performance
+      stringency_cluster <- cluster6_cache[cluster6_cache$value_col == "stringency_index", ]
+      
+      options(scipen=999) # force R not to use exponential notation.
+      
+      # merge world map with stringency cluster data by joining on country names
+      world_map_with_data <- merge(world_map, stringency_cluster,
+                                   by.x = "region", by.y = "country_name",
+                                   all.x = TRUE)
+      world_map_with_data <- world_map_with_data[order(world_map_with_data$order), ]
+
+      reds_col <- RColorBrewer::brewer.pal(length(breaks) - 1, "Paired")
+      names(reds_col) <- levels(world_map_with_data$som_cluster)
+    
+      # draw map using ggplotly with appropriate hover
+      p <- ggplot(world_map_with_data,
+             aes(x = long, y = lat, fill = as.factor(som_cluster), group = group, 
+                 text = paste('Country: ', region,
+                 '<br>SOM cluster number:', som_cluster)
+                 )) +
+        theme(legend.position = "bottom") +
+        geom_polygon() +
+        scale_fill_manual(values = reds_col, na.value="gray93") +
+        xlab("Longitude") + ylab("Latitude") +
+        ggtitle("Figure 5: SOM Cluster World Map for Stringency Index")
+
+      ggplotly(p, tooltip = "text", height = 500) %>%
+        layout(
+               legend = list(orientation = "h", x = 0.1, y = -0.15))
+```
+
+
+The results for the 'SOM Cluster Subgroup Map' plotted on GDP per capita, population and political systems are mixed with a range of different values for all six clusters. Hence the political, social and economic implications of the clusters are inconclusive without consulting experts with appropriate domain knowledge due to highly variable PSE values in each cluster. From a preliminary observation, there appears to be more correlation between political system and how countries respond to COVID due to less variability in the subgroups compared to GDP per capita and population.
+
+---
+
+# Discussion
+
+## Robustness
+Our final shiny application is built to handle different variations of the data. During the data cleaning process, we have created additional columns which accounts for variables such as smoothing the confirmed cases, standardising the confirmed cases against population as well as a combination of both. By identifying these potential sources of variation, we are able to account for it inside our product design, giving our users the ability to customise the dataset to their liking, and ensuring robustness. Currently, our product only allows filtering of time periods to visualise the trends over time and does not allow subsetting of the data according to time periods to produce clusters. The clusters we produced in our product are a result of the entire COVID-19 dataset time period downloaded at that point in time.
+
+## Generalisability
+Our shiny application clusters a total of roughly 166 countries based on the trends in new confirmed cases or stringency index. We have also sourced political systems data, economic data and population data of these countries to be able to show insights of how the entire world has handled the COVID-19 pandemic. The results attained are broadly applicable to many different types of people or situation and can be used as a precursor for further studies. Hence, our product is generalisable.
+
+## Limitations
+
+### PSE Factors
+One shortcoming of the product is the limited number of political, social and economic factors that we did our findings on. We took three variables, namely population, GDP per capita and constitutional forms as a representative of the three factors. In the future, we would expand the number of PSE factors to include variables such as religion, education level and geographical continent.
+
+### No Automation
+Due to a lack of time, our retrieval of the datasets was not automated. Up till now, we have been using a static dataset that dates back to around mid-April. Each csv file has to be downloaded manually through the appropriate links and run through the multiple data cleaning steps. This takes up a lot of time and may cause confusion for our users. We have identified this as a potential shortcoming and will look to improve this in the future for seamless data processing and data visualisation.
+
+### Performance Issues
+Another issue that we encountered was performance issues. Every time we loaded up the shiny application, it would take around 30 seconds for R to process some of the clusters and plots. During the wait, the entire screen would freeze up and it would make one question whether or not the application works. This resulted in a long wait times for the visualizations to load and unneeded frustrations. In order to reduce the load timing of the data, we decided to do caching of merged data.  This meant that our product is less flexible at the cost of improving data retrieval performance. Now, it takes around 10 seconds to display the plots which is an improvement but still a far cry from the instantaneous load that we desired.
+
+---
+
+# Conclusion
+
+Overall, the Shiny app provides Political and Social scientists with a visualisation tool, to understand the relationship between new cases or stringency index, and its effect on selected political, social and economic factors. This was achieved through the clustering of countries based on new cases or stringency index, and then subgrouping these clusters depending on GDP per capita, population or political systems. The results show that there is a correlation between new cases and the GDP of countries (economic factor) in cluster groups. When examining the government constitutional form (political factor) groups with clusters on new cases, there were high class imbalances and thus, no clear relationship could be interpreted. For stringency index, the results revealed a strong geospatial relationship (mix of social and political factors) among cluster groups. However, there is no clear relationship with independent PSE factors due to the highly varying results within each cluster. Despite this, there are many improvements which can be made to increase the accuracy of the results.
+
+## Future Improvement
+For future improvement, we aim to address the key issues that were previously identified, including the expanding PSE factors, app performance, and automation in updating of datasets. The priority would be to introduce other PSE factors, which would provide a more detailed understanding in how governments respond to the pandemic, which could possibly reveal a more clear relationship between new cases or stringency index, with PSE factors. We also aim to improve the app performance, by fine tuning the caching process. In ensuring that visualisations load faster without lag, this would improve the overall user experience for our target audience. Additionally, the automation of retrieving datasets would be an added benefit in allowing users to view the latest dataset.
+
+Furthermore, we aim to improve the user interface, by adding more user customisations, such as additional data filters and controls on visualisations. A personalised experience would allow our audience to feel more comfortable when using our Shiny app. Through these changes, we hope our visualisation becomes their “go-to” application for COVID-19 statistics and analysis. 
+
+---
+
+# Member Contribution
+All teammates met up regularly and participated actively in the discussion on the direction of the project.
+
+- Serena Gao was project lead, tuned the SOM model, and summarised key results.
+- Jenny Wang was scribe, performed data cleaning, and plotted cluster world maps.
+- Jonathan Then was domain specialist, determined number of clusters, and plotted PSE factors.
+- Dennis Wang was graphics expert, designed and formatted Shiny App, and implemented interactive map. 
+
+---
+
+# References {#ref} 
+
+[1] Google Cloud Platform: COVID-19 Open Data. (2021). Retrieved from https://github.com/GoogleCloudPlatform/covid-19-open-data
+
+[2] List of countries by system of government. (2021). Retrieved from https://en.wikipedia.org/wiki/List_of_countries_by_system_of_government
+
+[3] Bertelsmann Transformation Index. (2021). Retrieved from http://www.bti-project.org/
+
+[4] White, M. (2003). Historical Atlas of the 20th Century. Retrieved 8 June 2021, from http://users.erols.com/mwhite28/20centry.htm
+
+---
+
+# Appendix 
+
+## Merge Datasets {#appendix_1}
+
+In pandas, epidemiology and government stringency data were merged:
+```{python, class.source = "fold-show", results='hide', eval=FALSE}
+import pandas as pd
+
+# load epidemiology, government stringency and index data
+epi_df = pd.read_csv("epidemiology.csv")
+gov_df = pd.read_csv("oxford-government-response.csv")
+index_df = pd.read_csv("index.csv")
+
+def get_countries(df):
+    return sorted([x for x in df["key"].unique() if len(str(x)) == 2] )
+
+# get countries from each dataset
+epi_countries = get_countries(epi_df)
+gov_countries = get_countries(gov_df)
+
+# fill na values with "NA"
+index_df["country_code"].fillna("NA", inplace=True)
+
+# get country names in the index
+country_names = index_df[index_df["aggregation_level"] == 0]["country_code"].unique()
+index_cols = ["key", "country_name"]
+index_df = index_df[index_cols]
+index_df = index_df[index_df["key"].isin(country_names)]  # countries only
+
+# join datasets
+epi_ind_df = pd.merge(left=epi_df, right=index_df, on="key", how="inner")
+epi_gov_df = epi_gov_df[epi_gov_df["key"].isin( gov_df["key"].unique())]
+
+# convert epidemiology joined with government stringency data to .csv file
+epi_gov_df.to_csv("joined_epi_gov_data.csv", index=False)
+```
+
+In R, the cleaned data is read and further merged with the PSE factor data:
+```{r, class.source = "fold-show", results='hide', eval=FALSE}
+df = read.csv("data/epi_gov_data_cleaned.csv")
+
+# read and merge demographics data
+demographics <- read.csv("data/demographics.csv",
+                       stringsAsFactors = FALSE,
+                       check.names =  FALSE)
+
+df <- merge(df, demographics[, c("key", "population")], by=c("key","key")) 
+
+# read and merge economy data
+economy <- read.csv("data/economy.csv",
+                       stringsAsFactors = FALSE,
+                       check.names =  FALSE)
+
+df <- merge(df, economy[, c("key", "gdp", "gdp_per_capita")], by=c("key","key"))
+
+# check if negative, zero, or na values exist
+df[df$gdp <= 0, ] 
+df[df$gdp_per_capita <= 0, ] 
+df[df$population <= 0, ] 
+df[is.na(df$gdp), ] 
+df[is.na(df$gdp_per_capita), ] 
+df[is.na(df$population), ] 
+
+# load political data
+political = read.csv("data/political.csv")
+
+# trim extra white space in names
+trim <- function (x) gsub("^\\s+|\\s+$", "", x)
+political$Name <- trim(political$Name)
+
+# find difference between country names in df and political data
+setdiff(unique(df$country_name), unique(political$Name))
+
+# find countries whose names need changed
+political[grep(",", political$Name), ]
+
+# change all country names to match
+political[political$Name=="Bahamas, The",]$Name <- "Bahamas"
+political[political$Name=="China, People's Republic of",]$Name <- "China"
+political[political$Name=="Congo, Democratic Republic of the",]$Name <- "Democratic Republic of the Congo"
+political[political$Name=="Congo, Republic of the",]$Name <- "Republic of the Congo"
+political[political$Name=="Gambia, The",]$Name <- "Gambia"
+political[political$Name=="Korea, North",]$Name <- "North Korea"
+political[political$Name=="Korea, South",]$Name <- "South Korea"
+political[political$Name=="United States",]$Name <- "United States of America"
+
+# merge the two data sets
+df <- merge(df, political[, c("Name", "Constitutional.form", "Head.of.state", "Basis.of.executive.legitimacy")], by.x="country_name", by.y="Name") # NA's match
+
+# rename columns
+df <- rename(df, constitutional_form = Constitutional.form)
+df <- rename(df, head_of_state = Head.of.state)
+df[df$head_of_state=="n/a",]$head_of_state <- NA
+df <- rename(df, basis_of_executive_legitimacy = Basis.of.executive.legitimacy)
+```
+
+
+## Data Cleaning {#appendix_2}
+
+```{r, class.source = "fold-show", results='hide', eval=FALSE}
+covid_data <- read.csv("data/joined_epi_gov_data.csv",
+                       stringsAsFactors = FALSE,
+                       check.names =  FALSE)
+
+covid_data$date <- as.Date(covid_data$date)
+
+case_cols = c('new_confirmed', 'new_deceased', 'new_recovered',
+       'new_tested', 'total_confirmed', 'total_deceased', 'total_recovered',
+       'total_tested')
+
+policy_cols= c( 'school_closing', 'workplace_closing',
+       'cancel_public_events', 'restrictions_on_gatherings',
+       'public_transport_closing', 'stay_at_home_requirements',
+       'restrictions_on_internal_movement', 'international_travel_controls',
+       'income_support', 'debt_relief', 'fiscal_measures',
+       'international_support', 'public_information_campaigns',
+       'testing_policy', 'contact_tracing',
+       'emergency_investment_in_healthcare', 'investment_in_vaccines',
+       'facial_coverings', 'vaccination_policy', 'stringency_index')
+
+# drop columns not needed
+drop_name = c('new_recovered', 'new_tested','total_recovered', 'total_tested')
+covid_data = covid_data[, ! names(covid_data) %in% drop_name]
+case_cols <- case_cols[!case_cols %in% drop_name]
+
+# forward fill NA's in the middle of recording
+covid_data = covid_data %>%
+  group_by(country_name) %>%
+  fill(c(case_cols, policy_cols))
+
+# safely impute the rest of the NA's as zeroes
+for (col in case_cols) {
+  covid_data[is.na(covid_data[col]), col] = 0  
+}
+
+# impute negatives as 0
+for (col in case_cols) {
+  covid_data[covid_data[col] < 0, col] <- 0
+}
+
+# drop countries with trivial data
+country_exclusion = c("Liechtenstein", "Comoros")
+covid_data = covid_data[!covid_data$country_name %in% country_exclusion,]
+covid_data[is.na(covid_data)] <- 0
+
+# write to csv
+write.csv(covid_data, "epi_gov_data_cleaned.csv")
+```
+
+
+## Silhouette Method {#appendix_3}
+
+```{r, class.source = "fold-show" }
+cov_data <- read.csv("data/data_smoothed_standardised.csv")
+cov_data$date <- as.Date(cov_data$date)
+
+# MinMax Scaling 
+min_max_scale = function(series) {
+  return ((series - min(series))/(max(series) - min(series)))
+}
+
+new_cases_matrix <- cov_data %>%
+   dplyr::select(country_name, date, new_confirmed) %>% #SILHOUETTE METHOD WAS BASED ON NEW_CONFIRMED_SCALED
+   pivot_wider(names_from = country_name, values_from = new_confirmed) %>%
+   arrange(date) %>%
+   replace(is.na(.), 0) %>%
+   as.data.frame()
+
+rownames(new_cases_matrix) <- new_cases_matrix$date
+new_cases_matrix <- new_cases_matrix %>% dplyr::select(-date)
+new_cases_scaled <- apply(new_cases_matrix, 2, min_max_scale)
+
+fviz_nbclust(new_cases_scaled, FUN = hcut, method = "silhouette")
+```
+
+## Function for Generating SOM Clusters {#appendix_4}
+
+```{r, class.source = "fold-show", results='hide', eval=FALSE}
+
+generate_som <- function(VALUE_COL) {
+  
+  # Read in smoothed standardised data
+  data <- read.csv("data/data_smoothed_standardised.csv")
+  data$date <- as.Date(data$date)
+  
+  # Filter for the value col and turn into a matrix
+  data2 <- data[c("date", "country_name", VALUE_COL)]
+  country_matrix <- dcast(data2, country_name ~ date, value.var=VALUE_COL)
+  country_matrix[is.na(country_matrix)] <- 0
+  
+  rownames(country_matrix) <- country_matrix$country_name
+  country_matrix <- subset(country_matrix, select=-country_name)
+  
+  ## Run an som model on the country matrix 
+  som_model <- som(
+    as.matrix(country_matrix), 
+    grid=somgrid(xdim = 4, ydim=4, 
+                 topo="hexagonal"), 
+    rlen=100, 
+    alpha=c(0.05,0.01), 
+    keep.data = TRUE,)
+  
+  # Cut at 6 neighbours and join with og names
+  som_cluster <- cutree(hclust(dist(som_model$codes[[1]])), 6)
+  country_clusters <- data.frame(
+    rownames(country_matrix), som_model$unit.classif
+  )
+  ab <- data.frame(som_cluster)
+  ab$node_name = sapply(rownames(ab), substring, 2,) 
+  c6_cases_norm <- merge(country_clusters, ab, by.x="som_model.unit.classif", by.y="node_name")
+  colnames(c6_cases_norm) <- c("som_node", "country_name", "som_cluster")
+  c6_cases_norm$country_name <- gsub("\\.", " ",
+                                     c6_cases_norm$country_name)
+  
+  # Write mappings to a csv
+  write.csv(c6_cases_norm,   paste("data/c6_clusters_RERUN_", VALUE_COL, ".csv", sep=""))
+  
+  plot(som_model, type="mapping",  main = "Clusters",
+       bgcol = rainbow(6)[som_cluster],
+       cex=0.6
+       , labels=rownames(country_matrix)
+  )
+  add.cluster.boundaries(som_model, som_cluster)
+  
+  # Write model to an rds
+  final_results <- list(
+    mappings = c6_cases_norm,
+    model = som_model
+  )
+  saveRDS(final_results,  paste("data/c6_RERUN_", VALUE_COL, ".rds", sep=""))
+  
+}
+
+
+```
