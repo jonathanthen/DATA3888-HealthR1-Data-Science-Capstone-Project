@@ -1,0 +1,145 @@
+---
+title: "data collection and cleaning"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(plotly)
+library(zoo)
+```
+
+
+
+```{r}
+df = read.csv("data/epi_gov_data_cleaned.csv")
+dim(df)
+head(df)
+
+```
+
+```{r}
+df2 <- df[df$country_name %in%
+            c("Brazil", "Germany", "Australia", "United Kingdom", "Italy", "New Zealand",
+"United States", "Spain", "Singapore", "India", "Japan", "Norway", "United States of America")
+            ,]
+
+```
+
+```{r}
+demographics <- read.csv("data/demographics.csv",
+                       stringsAsFactors = FALSE,
+                       check.names =  FALSE)
+# demographics
+df <- merge(df, demographics[, c("key", "population")], by=c("key","key")) # NA's match
+```
+
+```{r}
+economy <- read.csv("data/economy.csv",
+                       stringsAsFactors = FALSE,
+                       check.names =  FALSE)
+# economy
+df <- merge(df, economy[, c("key", "gdp", "gdp_per_capita")], by=c("key","key")) # NA's match
+```
+
+```{r}
+# check if negative, zero, or na values exist
+df[df$gdp <= 0, ] 
+df[df$gdp_per_capita <= 0, ] 
+df[df$population <= 0, ] 
+df[is.na(df$gdp), ] 
+df[is.na(df$gdp_per_capita), ] 
+df[is.na(df$population), ] 
+```
+
+```{r}
+# load political data
+political = read.csv("data/political.csv")
+
+# trim extra white space
+trim <- function (x) gsub("^\\s+|\\s+$", "", x)
+political$Name <- trim(political$Name)
+
+# find difference between country names in df and political data
+setdiff(unique(df$country_name), unique(political$Name))
+
+# find countries whose names need changed
+political[grep(",", political$Name), ]
+
+# change all country names to match
+political[political$Name=="Bahamas, The",]$Name <- "Bahamas"
+political[political$Name=="China, People's Republic of",]$Name <- "China"
+political[political$Name=="Congo, Democratic Republic of the",]$Name <- "Democratic Republic of the Congo"
+political[political$Name=="Congo, Republic of the",]$Name <- "Republic of the Congo"
+political[political$Name=="Gambia, The",]$Name <- "Gambia"
+political[political$Name=="Korea, North",]$Name <- "North Korea"
+political[political$Name=="Korea, South",]$Name <- "South Korea"
+political[political$Name=="United States",]$Name <- "United States of America"
+
+# merge the two data sets
+df <- merge(df, political[, c("Name", "Constitutional.form", "Head.of.state", "Basis.of.executive.legitimacy")], by.x="country_name", by.y="Name") # NA's match
+
+unique(political$Constitutional.form)
+
+df <- rename(df, constitutional_form = Constitutional.form)
+unique(df$constitutional_form)
+```
+
+
+```{r}
+df <- rename(df, head_of_state = Head.of.state)
+unique(df$head_of_state)
+df[df$head_of_state=="n/a",]$head_of_state <- NA
+
+df <- rename(df, basis_of_executive_legitimacy = Basis.of.executive.legitimacy)
+unique(df$basis_of_executive_legitimacy)
+```
+
+```{r}
+df2 <- read.csv("data/index.csv")
+
+df2 <- df2 %>%
+  filter(aggregation_level==0) %>%
+  select(key, country_name)
+
+
+# demographics
+df2 <- merge(df2, demographics[, c("key", "population")], by=c("key","key")) # NA's match
+
+# economy
+df2 <- merge(df2, economy[, c("key", "gdp", "gdp_per_capita")], by=c("key","key")) # NA's match
+
+# political
+df2 <- merge(df2, political[, c("Name", "Constitutional.form", "Head.of.state", "Basis.of.executive.legitimacy")], by.x="country_name", by.y="Name") # NA's match
+
+unique(political$Constitutional.form)
+
+df2 <- rename(df2, constitutional_form = Constitutional.form)
+unique(df2$constitutional_form)
+
+df2 <- rename(df2, head_of_state = Head.of.state)
+unique(df2$head_of_state)
+df2[df2$head_of_state=="n/a",]$head_of_state <- NA
+
+df2 <- rename(df2, basis_of_executive_legitimacy = Basis.of.executive.legitimacy)
+unique(df2$basis_of_executive_legitimacy)
+
+# write.csv(df2,"data/index_subgroups.csv", row.names = FALSE)
+
+max(df2$population)
+
+df3 <- read.csv("data/data_smoothed_standardised.csv")
+
+df3$date <- as.Date(df3$date)
+
+df3<-df3[!(df3$date <= "2021-4-17" & df3$date >= "2021-4-15"),]
+
+df3[df3$country_name == "Bulgaria" & df3$new_confirmed_smooth < 0, ]$new_confirmed_smooth <- 0
+df3[df3$country_name == "Bulgaria" & df3$new_confirmed_pop_smooth < 0, ]$new_confirmed_pop_smooth <- 0
+df3[df3$country_name == "Seychelles" & df3$new_confirmed_pop_smooth < 0, ]$new_confirmed_pop_smooth <- 0
+
+# write.csv(df3,"data/data_smoothed_standardised.csv", row.names = FALSE)
+
+```

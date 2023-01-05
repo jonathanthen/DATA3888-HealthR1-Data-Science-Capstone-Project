@@ -1,0 +1,145 @@
+---
+title: "DATA3888 Test 2"
+author: "Jonathan Then"
+date: "4/25/2021"
+output: html_document
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(readxl)
+library(tibble)
+library(janitor)
+library(reshape2)
+library(ggplot2)
+library(ggthemes)
+library(plotly)
+```
+
+```{r, warning=FALSE, message=FALSE}
+data_raw = read_csv("joined_epi_gov_data.csv")
+data = data_raw
+
+data$date <- as.Date(data$date) #Convert to Date
+
+data[is.na(data)] <- 0 #Fill NAs with 0s
+
+data$new_confirmed <- replace(data$new_confirmed, data$new_confirmed < 0, 0)
+data$new_deceased <- replace(data$new_deceased, data$new_deceased < 0, 0)
+```
+
+```{r}
+new_data = data %>% select(date, country_name, new_confirmed, total_confirmed, new_deceased, total_deceased, stringency_index)
+
+#Absolute Change
+new_data = new_data %>%
+    mutate(stringency_diff = stringency_index - lag(stringency_index, default = first(stringency_index)))
+
+#Replace NaN and Infinity to 0
+new_data[sapply(new_data, simplify = 'matrix', is.nan)] <- 0
+new_data[sapply(new_data, simplify = 'matrix', is.infinite)] <- 0
+```
+
+```{r}
+#Can only do one country at a time
+countries <- c("India")
+final_data <- new_data %>% filter(new_data$country_name %in% countries)
+
+#Find maximum of new cases and maximum of deaths
+indtotal = min(which(final_data$total_confirmed > 13000000)) #Hardcode
+
+maxnew = max(final_data$new_confirmed)
+indnew = which(final_data$new_confirmed == maxnew)
+
+maxdeath = max(final_data$new_deceased)
+inddeath = which(final_data$new_deceased == maxdeath)
+
+```
+
+```{r}
+#Number of Total Confirmed Cases
+
+g_total <- ggplot(final_data, 
+                aes(x = date, y = total_confirmed, 
+                    group = country_name, color = country_name)) +
+  geom_line(lwd = 1) +
+  theme_bw() +
+  scale_color_tableau(palette = "Tableau 20") +
+  ylab("Total Number of Cases") +
+  scale_y_continuous(labels = scales::comma) + # disable scientific notation
+  scale_x_date(date_breaks = "1 month") +
+  labs(color = "Country/Region") 
+g_total + geom_vline(xintercept=as.numeric(final_data$date[indtotal]), linetype=4, colour = "orange")
+
+```
+
+```{r}
+#Number of New Confirmed Cases
+
+g_confirmed <- ggplot(final_data, 
+                aes(x = date, y = new_confirmed, 
+                    group = country_name, color = country_name)) +
+  geom_line(lwd = 1) +
+  theme_bw() +
+  scale_color_tableau(palette = "Tableau 20") +
+  ylab("Number of New Cases") +
+  scale_y_continuous(labels = scales::comma) + # disable scientific notation
+  scale_x_date(date_breaks = "1 month") +
+  labs(color = "Country/Region") 
+g_confirmed + geom_vline(xintercept=as.numeric(final_data$date[indnew]), linetype=4, colour = "red")
+
+```
+
+```{r}
+#Number of New Deaths
+
+g_death <- ggplot(final_data, 
+                aes(x = date, y = new_deceased, 
+                    group = country_name, color = country_name)) +
+  geom_line(lwd = 1) +
+  theme_bw() +
+  scale_color_tableau(palette = "Tableau 20") +
+  ylab("Number of New Deaths") +
+  scale_y_continuous(labels = scales::comma) + # disable scientific notation
+  scale_x_date(date_breaks = "1 month") +
+  labs(color = "Country/Region") 
+g_death + geom_vline(xintercept=as.numeric(final_data$date[inddeath]), linetype=4, colour = "black")
+```
+
+
+```{r}
+#Stringency Difference
+
+g_index <- ggplot(final_data, 
+                aes(x = date, y = stringency_diff, 
+                    group = country_name, color = country_name)) +
+  geom_line(lwd = 1) +
+  theme_bw() +
+  scale_color_tableau(palette = "Tableau 20") +
+  ylab("Stringecy Index Difference") +
+  scale_y_continuous(labels = scales::comma) + # disable scientific notation
+  scale_x_date(date_breaks = "1 month") +
+  labs(color = "Country/Region") 
+g_index + geom_vline(xintercept=as.numeric(final_data$date[indnew]), linetype=4, colour = "red") + geom_vline(xintercept=as.numeric(final_data$date[inddeath]), linetype=4, colour = "black") + geom_vline(xintercept=as.numeric(final_data$date[indtotal]), linetype=4, colour = "orange")
+```
+
+
+```{r}
+#Stringency Difference
+
+g_index <- ggplot(final_data, 
+                aes(x = date, y = stringency_index, 
+                    group = country_name, color = country_name)) +
+  geom_line(lwd = 1) +
+  theme_bw() +
+  scale_color_tableau(palette = "Tableau 20") +
+  ylab("Stringecy Index") +
+  scale_y_continuous(labels = scales::comma) + # disable scientific notation
+  scale_x_date(date_breaks = "1 month") +
+  labs(color = "Country/Region") 
+g_index + geom_vline(xintercept=as.numeric(final_data$date[indnew]), linetype=4, colour = "red") + geom_vline(xintercept=as.numeric(final_data$date[inddeath]), linetype=4, colour = "black") + geom_vline(xintercept=as.numeric(final_data$date[indtotal]), linetype=4, colour = "orange")
+```
+
+```{r}
+
+```

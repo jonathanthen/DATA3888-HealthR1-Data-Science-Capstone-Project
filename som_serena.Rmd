@@ -1,0 +1,908 @@
+---
+title: "som"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(kohonen)
+library(tidyverse)
+
+set.seed(123)
+```
+
+
+```{r}
+df = read.csv("new_cases_matrix.csv", row.names="date", header=TRUE)
+
+```
+
+
+
+## Clustering
+ 
+
+
+We need rows to be the thing to group on (country) and columns to be features (in this case, date?)
+
+
+
+Since Turkmenistan,  Kiribati, and Tonga have zero cases reported, we remove them from the dataset as the normalisation would yield infinity. 
+
+
+```{r}
+normalize <- function(x, na.rm = TRUE) {
+    return((x- min(x)) /(max(x)-min(x)))
+}
+
+```
+
+
+
+```{r}
+new_cases <- data.frame(apply(
+        df %>% dplyr::select(-Turkmenistan, -Kiribati, -Tonga)
+        , 2, normalize))
+```
+
+
+```{r}
+new_cases <- t(new_cases)
+```
+
+
+
+
+```{r}
+som_model <- som(
+        new_cases, 
+        grid=somgrid(xdim = 4, ydim=4, 
+                     topo="hexagonal"), 
+        rlen=100, 
+        alpha=c(0.05,0.01), 
+        keep.data = TRUE,)
+```
+
+
+
+
+Plotting the training progress, which should decrease over time until it plateaus
+
+```{r}
+plot(som_model, type="changes")
+```
+
+Node counts indicate how many samples in the dataset are mapped to the same node. This should be relatively uniform-- otherwise may need a bigger map. Here, we see one node has 4x the number of countries as others
+
+
+```{r}
+plot(som_model, type="count")
+```
+
+
+
+Code referencing: https://clarkdatalabs.github.io/soms/SOM_Shakespeare_Part_1
+and https://www.r-bloggers.com/2014/02/self-organising-maps-for-customer-segmentation-using-r/
+
+
+```{r}
+plot(som_model,
+     type = "mapping",
+     # bgcol = "lightgray",
+     labels = rownames(new_cases))
+```
+
+Here now we only display the countries we're interested in seeing
+
+
+
+
+
+```{r}
+
+
+
+to_plot <- c("United.States.of.America", 
+             "Italy", "Iran", "France", "Australia", "New.Zealand",
+             "India", "Brazil", "China", "South.Korea", "Japan", "United.Kingdom", "Russia")
+
+new_labs <- c()
+X <- as.vector(rownames(new_cases))
+
+for (i in 1:nrow(new_cases)){
+  if (X[i] %in% to_plot){
+          new_labs[i] <- X[i]
+          }
+  else{ 
+          new_labs[i]<-"."
+          }
+}
+
+```
+
+Plotting with minimal selection of countries
+
+```{r}
+plot(som_model,
+     type = "mapping",
+     labels = new_labs)
+```
+```{r}
+plot(som_model, type="dist.neighbours")
+```
+
+Also referencing: 
+
+https://www.shanelynn.ie/self-organising-maps-for-customer-segmentation-using-r/
+
+
+
+Now clustering on the SOM model?
+
+
+```{r}
+mydata <- som_model$codes 
+wss <- (nrow(new_cases)-1)*sum(apply(new_cases,2,var)) 
+for (i in 2:15) {
+  wss[i] <- sum(kmeans(new_cases, centers=i)$withinss)
+}
+plot(wss)
+```
+
+And here: https://rpubs.com/AlgoritmaAcademy/som
+
+
+```{r}
+# Visualising cluster results
+## use hierarchical clustering to cluster the codebook vectors
+som_cluster <- cutree(hclust(dist(som_model$codes[[1]])), 6)
+
+
+# plot these results:
+
+plot(som_model, type="mapping",  main = "Clusters",
+      bgcol = rainbow(6)[som_cluster]) 
+add.cluster.boundaries(som_model, som_cluster)
+```
+
+
+```{r}
+country_clusters <- data.frame(
+        rownames(new_cases), som_model$unit.classif
+              )
+```
+
+
+```{r}
+ab <- data.frame(som_cluster)
+ab$node_name = sapply(rownames(ab), substring, 2,)
+```
+
+
+```{r}
+
+c6_cases_norm <- merge(country_clusters, ab, by.x="som_model.unit.classif", by.y="node_name")
+
+colnames(c6_cases_norm) <- c("som_node", "country_name", "som_cluster")
+
+c6_cases_norm$country_name <- gsub("\\.", " ",
+  c6_cases_norm$country_name)
+
+c6_cases_norm
+
+```
+
+```{r}
+write.csv(c6_cases_norm,  "data/c6_cases_norm.csv")
+```
+
+
+
+```{r}
+c6_cases_norm %>% arrange(som_cluster)
+```
+
+
+```{r}
+
+df2 <- data.frame(apply(
+        df %>% dplyr::select(-Turkmenistan, -Kiribati, -Tonga)
+        , 2, normalize))
+
+df2$date <- rownames(df2)
+
+library(reshape2)
+df2 <- melt(df2, id=c("date"))
+colnames(df2) <- c("date", "country_name", "new_confirmed")
+df2$date = as.Date(df2$date)
+```
+
+
+```{r}
+country_clusters
+```
+
+
+
+```{r}
+CLUST_NUM = 15
+
+country_list <- country_clusters[country_clusters$som_model.unit.classif == CLUST_NUM, "rownames.new_cases."]
+
+
+g = ggplot() +
+  geom_line(data = df2[df2$country_name %in% country_list,], 
+            aes(x = date, y = new_confirmed, 
+                color = country_name)) +
+  theme_bw() + 
+        ylab("New confirmed") + 
+        labs(title = "COVID new cases (scaled)")
+
+plotly::ggplotly(g)
+```
+
+
+
+
+
+TODO: still need to map the nodes to clusters
+
+------
+
+
+
+Matrixfy from scratch, bc we need that
+
+```{r}
+data <- read.csv("data/data_smoothed_standardised.csv")
+data$date <- as.Date(data$date)
+data
+
+```
+
+```{r}
+
+library(reshape2)
+VALUE_COL = "new_confirmed_norm"
+
+data2 <- data[c("date", "country_name", VALUE_COL)]
+
+country_matrix <- dcast(data2, country_name ~ date, value.var=VALUE_COL)
+country_matrix[is.na(country_matrix)] <- 0
+
+rownames(country_matrix) <- country_matrix$country_name
+country_matrix <- subset(country_matrix, select=-country_name)
+
+som_model <- som(
+        as.matrix(country_matrix), 
+        grid=somgrid(xdim = 4, ydim=4, 
+                     topo="hexagonal"), 
+        rlen=100, 
+        alpha=c(0.05,0.01), 
+        keep.data = TRUE,)
+```
+
+
+```{r}
+plot(som_model,
+     type = "mapping",
+     # bgcol = "lightgray",
+     labels = rownames(new_cases))
+```
+
+
+```{r}
+som_cluster <- cutree(hclust(dist(som_model$codes[[1]])), 6)
+
+
+# plot these results:
+
+plot(som_model, type="mapping",  main = "Clusters",
+      bgcol = rainbow(6)[som_cluster]) 
+add.cluster.boundaries(som_model, som_cluster)
+```
+
+```{r}
+country_clusters <- data.frame(
+        rownames(country_matrix), som_model$unit.classif
+              )
+```
+
+
+```{r}
+ab <- data.frame(som_cluster)
+ab$node_name = sapply(rownames(ab), substring, 2,)
+```
+
+
+```{r}
+
+c6_cases_norm <- merge(country_clusters, ab, by.x="som_model.unit.classif", by.y="node_name")
+
+colnames(c6_cases_norm) <- c("som_node", "country_name", "som_cluster")
+
+c6_cases_norm$country_name <- gsub("\\.", " ",
+  c6_cases_norm$country_name)
+
+c6_cases_norm
+
+```
+
+
+
+```{r}
+CLUST_NUM = 6
+
+country_list <- c6_cases_norm[c6_cases_norm$som_cluster == CLUST_NUM, "country_name"]
+
+
+g = ggplot() +
+  geom_line(data = data2[data2$country_name %in% country_list,], 
+            aes_string(x = "date", y = VALUE_COL, 
+                color = "country_name")) +
+  theme_bw() + 
+        ylab(VALUE_COL) + 
+        labs(title = "COVID new cases (scaled)")
+
+plotly::ggplotly(g)
+```
+
+
+
+
+
+```{r}
+write.csv(c6_cases_norm,  "data/c6_cases_norm.csv")
+```
+
+
+
+
+
+
+---------------
+
+## SOM on Stringency 
+
+Now we do an SOM on stringency
+
+
+```{r}
+
+VALUE_COL = "stringency_index"
+
+data3 <- data[c("date", "country_name", VALUE_COL)]
+```
+
+
+
+
+
+```{r}
+country_matrix <- dcast(data3, country_name ~ date, value.var=VALUE_COL)
+country_matrix[is.na(country_matrix)] <- 0
+```
+
+
+
+```{r}
+rownames(country_matrix) <- country_matrix$country_name
+country_matrix <- subset(country_matrix, select=-country_name)
+```
+
+
+
+
+
+```{r}
+som_model <- som(
+        as.matrix(country_matrix), 
+        grid=somgrid(xdim = 4, ydim=4, 
+                     topo="hexagonal"), 
+        rlen=100, 
+        alpha=c(0.05,0.01), 
+        keep.data = TRUE,)
+```
+
+
+```{r}
+plot(som_model,
+     type = "mapping",
+     # bgcol = "lightgray",
+     labels = rownames(new_cases))
+```
+
+
+```{r}
+som_cluster <- cutree(hclust(dist(som_model$codes[[1]])), 6)
+
+
+# plot these results:
+
+plot(som_model, type="mapping",  main = "Clusters",
+      bgcol = rainbow(6)[som_cluster]) 
+add.cluster.boundaries(som_model, som_cluster)
+```
+
+
+```{r}
+country_clusters <- data.frame(
+        rownames(country_matrix), som_model$unit.classif
+              )
+ab <- data.frame(som_cluster)
+ab$node_name = sapply(rownames(ab), substring, 2,)
+```
+
+
+```{r}
+ab
+```
+
+
+```{r}
+
+c6_stringency_norm <- merge(country_clusters, ab, by.x="som_model.unit.classif", by.y="node_name")
+
+colnames(c6_stringency_norm) <- c("som_node", "country_name", "som_cluster")
+
+c6_stringency_norm$country_name <- gsub("\\.", " ",
+  c6_stringency_norm$country_name)
+c6_stringency_norm$value_col = VALUE_COL
+c6_stringency_norm
+
+```
+
+
+
+```{r}
+CLUST_NUM = 3
+
+country_list <- c6_stringency_norm[c6_stringency_norm$som_cluster == CLUST_NUM, "country_name"]
+
+
+g = ggplot() +
+  geom_line(data = data3[data3$country_name %in% country_list,], 
+            aes_string(x = "date", y = VALUE_COL, 
+                color = "country_name")) +
+  theme_bw() + 
+        ylab(VALUE_COL) + 
+        labs(title = "COVID Govt Stringency")
+
+plotly::ggplotly(g)
+```
+
+
+```{r}
+write.csv(c6_stringency_norm, "data/c6_stringency.csv", row.names=FALSE)
+```
+
+
+------
+
+
+
+
+## World Map Cluster Time
+
+We've generated these clusters! Now it's time to visualise it on the world map.
+
+
+
+```{r}
+world_map <- map_data("world2")
+
+ggplot(world_map, aes(x = long, y = lat, group = group)) + 
+  geom_polygon(fill = "white", colour = "gray") + 
+  theme(legend.position = "bottom", aspect.ratio = 0.6) + 
+  ggtitle("Map of World")
+```
+
+
+-------
+
+
+## Designing a New Cluster Dataset for different iterations of cluster 6
+
+Different types we need for new cases:
+- Base
+- Standardised
+- Smoothed
+- Standardised and smoothed
+
+
+And repeat for stringency.
+
+
+
+```{r}
+
+library(reshape2)
+```
+
+
+```{r}
+## Define Constants
+set.seed(123)
+
+VALUE_COL = "new_confirmed_smooth"  # cases column to use
+
+
+
+```
+
+```{r}
+data <- read.csv("data/data_smoothed_standardised.csv")
+data$date <- as.Date(data$date)
+
+data2 <- data[c("date", "country_name", VALUE_COL)]
+country_matrix <- dcast(data2, country_name ~ date, value.var=VALUE_COL)
+country_matrix[is.na(country_matrix)] <- 0
+
+rownames(country_matrix) <- country_matrix$country_name
+country_matrix <- subset(country_matrix, select=-country_name)
+
+som_model <- som(
+        as.matrix(country_matrix), 
+        grid=somgrid(xdim = 4, ydim=4, 
+                     topo="hexagonal"), 
+        rlen=100, 
+        alpha=c(0.05,0.01), 
+        keep.data = TRUE,)
+
+
+plot(som_model,
+     type = "mapping",
+     labels = rownames(new_cases))
+
+
+som_cluster <- cutree(hclust(dist(som_model$codes[[1]])), 6)
+
+
+# plot these results:
+
+plot(som_model, type="mapping",  main = "Clusters",
+      bgcol = rainbow(6)[som_cluster]) 
+add.cluster.boundaries(som_model, som_cluster)
+
+
+# Map to og 6 clusters
+country_clusters <- data.frame(
+        rownames(country_matrix), som_model$unit.classif
+              )
+ab <- data.frame(som_cluster)
+ab$node_name = sapply(rownames(ab), substring, 2,)  # Nodes are given by V1, V2, etc, so take substring
+
+ab
+country_clusters
+
+
+c6_cases_norm <- merge(country_clusters, ab, by.x="som_model.unit.classif", by.y="node_name")
+colnames(c6_cases_norm) <- c("som_node", "country_name", "som_cluster")
+c6_cases_norm$country_name <- gsub("\\.", " ",
+  c6_cases_norm$country_name)
+
+c6_cases_norm$value_col = VALUE_COL
+
+c6_cases_norm
+
+```
+
+```{r}
+ls <- list(
+  new_confirmed=som_model
+)
+```
+
+
+```{r}
+ls2 <- list
+```
+
+
+```{r}
+saveRDS(som_model, file="som_model_test.rds")
+```
+
+```{r}
+youthought <- readRDS("som_model_test.rds")
+```
+
+
+```{r}
+youthought
+
+
+ay <- cutree(hclust(dist(youthought$codes[[1]])), 6)
+
+
+# plot these results:
+
+plot(youthought, type="mapping",  main = "Clusters",
+      bgcol = rainbow(6)[ay]) 
+add.cluster.boundaries(youthought, ay)
+```
+
+
+
+```{r}
+unique(country_clusters$som_model.unit.classif) 
+```
+
+
+```{r}
+write.csv(c6_cases_norm, paste("data/c6_cases_", VALUE_COL, ".csv", sep=""),
+          row.names=FALSE)
+```
+
+
+
+
+```{r}
+CLUST_NUM = 3
+
+country_list <- c6_cases_norm[c6_cases_norm$som_cluster == CLUST_NUM, "country_name"]
+
+
+g = ggplot() +
+  geom_line(data = data2[data2$country_name %in% country_list,], 
+            aes_string(x = "date", y = VALUE_COL, 
+                color = "country_name")) +
+  theme_bw() + 
+        ylab(VALUE_COL) + 
+        labs(title = "COVID new cases (scaled)")
+
+plotly::ggplotly(g)
+```
+
+## Combine Clusters DFs
+
+
+```{r}
+read.csv("data/c6_cases_ new_confirmed .csv")
+```
+
+
+```{r}
+
+
+bound <-read.csv(paste("data/", "c6_cases_new_confirmed.csv", sep=""))
+for (i in c(
+  # "c6_cases_new_confirmed.csv",
+  "c6_cases_new_confirmed_pop.csv",
+  "c6_cases_new_confirmed_pop_smooth.csv",
+  "c6_cases_new_confirmed_smooth.csv",
+  "c6_stringency.csv")) {
+  
+  results <- read.csv(paste("data/", i, sep=""))
+  print(results)
+  bound <- rbind(bound, results)
+}
+```
+
+```{r}
+bound
+```
+
+
+```{r}
+write.csv(bound, "data/c6_country_clusters_cache.csv",
+          row.names=FALSE)
+```
+
+
+```{r}
+
+ggplot(
+  
+)
+
+```
+
+
+
+## Saving SOM models to thing
+
+
+
+```{r}
+## Define Constants
+set.seed(123)
+
+VALUE_COL = "new_confirmed"  # cases column to use
+
+
+
+```
+
+```{r}
+
+generate_som <- function(VALUE_COL) {
+  
+  data <- read.csv("data/data_smoothed_standardised.csv")
+  data$date <- as.Date(data$date)
+  
+  data2 <- data[c("date", "country_name", VALUE_COL)]
+  country_matrix <- dcast(data2, country_name ~ date, value.var=VALUE_COL)
+  country_matrix[is.na(country_matrix)] <- 0
+  
+  rownames(country_matrix) <- country_matrix$country_name
+  country_matrix <- subset(country_matrix, select=-country_name)
+  
+
+  som_model <- som(
+          as.matrix(country_matrix), 
+          grid=somgrid(xdim = 4, ydim=4, 
+                       topo="hexagonal"), 
+          rlen=100, 
+          alpha=c(0.05,0.01), 
+          keep.data = TRUE,)
+  
+  som_cluster <- cutree(hclust(dist(som_model$codes[[1]])), 6)
+  country_clusters <- data.frame(
+        rownames(country_matrix), som_model$unit.classif
+              )
+  ab <- data.frame(som_cluster)
+  ab$node_name = sapply(rownames(ab), substring, 2,) 
+  c6_cases_norm <- merge(country_clusters, ab, by.x="som_model.unit.classif", by.y="node_name")
+  colnames(c6_cases_norm) <- c("som_node", "country_name", "som_cluster")
+  c6_cases_norm$country_name <- gsub("\\.", " ",
+    c6_cases_norm$country_name)
+  
+  print(c6_cases_norm)
+  
+  plot(som_model, type="mapping",  main = "Clusters",
+    bgcol = rainbow(6)[som_cluster],
+    cex=0.6
+    , labels=rownames(country_matrix)
+    )
+  add.cluster.boundaries(som_model, som_cluster)
+  
+
+  return(som_model)
+  
+}
+
+
+```
+
+```{r}
+
+for (i in c(
+  "new_confirmed",
+  "new_confirmed_pop",
+  "new_confirmed_pop_smooth",
+  "new_confirmed_smooth",
+  "stringency_index")) {
+  som_mod <- generate_som(i)
+  
+  saveRDS(som_mod, paste("data/c6_sommodel_", i, ".rds", sep=""))
+  }
+
+```
+
+
+
+```{r}
+som_model_new_confirmed <-  generate_som("new_confirmed")
+```
+
+```{r}
+
+```
+
+
+
+```{r}
+saveRDS(som_model_new_confirmed, "data/c6_sommodel_new_confirmed_AHHHHH.rds")
+```
+
+
+```{r}
+som_model_new_confirmed
+
+som_cluster <- cutree(hclust(dist(som_model_new_confirmed$codes[[1]])), 6)
+
+plot(som_model_new_confirmed, type="mapping",  main = "Clusters",
+    bgcol = rainbow(6)[som_cluster], labels=sort(rownames(country_matrix)),
+    cex=0.8) 
+add.cluster.boundaries(som_model_new_confirmed, som_cluster)
+```
+```{r}
+hmm <- readRDS("data/c6_sommodel_new_confirmed.rds")
+som_cluster <- cutree(hclust(dist(hmm$codes[[1]])), 6)
+plot(hmm, type="mapping",  main = "Clusters",
+  bgcol = rainbow(6)[som_cluster],
+  cex=0.6
+  , labels=sort(rownames(country_matrix))
+  )
+add.cluster.boundaries(hmm, som_cluster)
+
+```
+
+
+
+
+
+
+## Quick merge between cluster cache and key
+
+
+```{r}
+hmm = read.csv("data/c6_country_clusters_cache.csv")
+
+data <- read.csv("data/data_smoothed_standardised.csv")
+
+```
+
+
+
+```{r}
+data
+```
+
+```{r}
+country_keyname = unique(data[,c("country_name", "key")])
+```
+
+
+
+```{r}
+write.csv(merge(hmm, country_keyname, on="country_name"),
+          "data/c6_country_clusters_cache2.csv",
+          row.names = FALSE
+          )
+```
+
+
+```{r}
+model <- readRDS("data/c6_sommodel_new_confirmed.rds")
+model
+```
+
+```{r}
+        # Visualising cluster results
+        som_cluster <- cutree(hclust(dist(model$codes[[1]])), 6)
+
+        plot(model, type="mapping",  main = "Clusters",
+            bgcol = rainbow(6)[som_cluster]) 
+        add.cluster.boundaries(model, som_cluster)
+```
+
+
+
+```{r}
+cov_data <- read.csv("data/data_smoothed_standardised.csv")
+saveRDS(cov_data, "data/cov_data.rds")
+```
+
+
+----
+
+
+# Time to check output
+
+```{r}
+new_confirmed <- readRDS("data/c6_RERUN_new_confirmed.rds")
+new_confirmed
+```
+
+```{r}
+
+
+clust <- cutree(hclust(dist(new_confirmed$model$codes[[1]])), 6)
+
+plot(new_confirmed$model, type="mapping",  main = "Clusters",
+     bgcol = rainbow(6)[clust],
+     cex=0.6
+     , labels=sort(unique(new_confirmed$mappings$country_name))
+)
+add.cluster.boundaries(new_confirmed$model, clust)
+```
+
+
+```{r}
+ls <- readRDS("data/c6_RERUN_stringency_index.rds")
+ls
+```
+

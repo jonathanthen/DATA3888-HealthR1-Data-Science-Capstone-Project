@@ -1,0 +1,25 @@
+---
+title: "Merge Covid Data & Clusters"
+author: "Jonathan Then"
+date: "5/29/2021"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+
+cov_data <- read.csv("data/data_smoothed_standardised.csv")
+cluster6_cache <- read.csv("data/c6_country_clusters_cache.csv")
+```
+
+```{r}
+cluster_df <- merge(cov_data, cluster6_cache[, c("country_name", "som_cluster", "value_col")], by=c("country_name","country_name"))
+cluster_df = cluster_df[-c(8:26)]
+cluster_df = cluster_df[c(-16, -17, -18, -21)]
+
+```
+
+```{r}
+write.csv(cluster_df,"data/merged_covid_clusters.csv", row.names = FALSE)
+
+```

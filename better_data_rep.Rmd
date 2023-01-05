@@ -1,0 +1,76 @@
+---
+title: "better_data_rep"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Combine cluster DF/csvs
+
+```{r}
+bound <- c()
+for (i in c(
+  "new_confirmed",
+  "new_confirmed_pop",
+  "new_confirmed_pop_smooth",
+  "new_confirmed_smooth",
+  "stringency_index")) {
+  
+  results <- read.csv(paste("data/c6_clusters_RERUN_", i, ".csv", sep=""))
+  results$value_col = i
+  
+  if (!(1 %in% unique(results$som_cluster))) {
+    # Adjust if the first cluster is empty for display purposes
+    results$som_cluster = results$som_cluster - 1
+  }
+  
+  bound <- rbind(bound, results)
+}
+```
+
+```{r}
+subset_bound <- bound[c("som_node", "country_name", "som_cluster", "value_col")]
+
+cov_data <- read.csv("data/data_smoothed_standardised.csv")
+country_keyname = unique(cov_data[,c("country_name", "key")])
+```
+
+
+```{r}
+
+merged_data <- merge(subset_bound, country_keyname, on="country_name")
+
+merged_data
+```
+
+```{r}
+
+write.csv(merged_data, "data/c6_clusters_RERUN.csv", row.names=FALSE)
+```
+
+
+Better data rep of cluster cache (i.e. I don't want cluster 1 to be the empty one)
+
+
+```{r}
+c6_cases_new_confirmed <- read.csv("data/c6_country_clusters_cache.csv")
+c6_cases_new_confirmed
+```
+
+```{r}
+c6_cases_new_confirmed[c6_cases_new_confirmed$value_col == "new_confirmed",]$som_cluster = c6_cases_new_confirmed[c6_cases_new_confirmed$value_col == "new_confirmed",]$som_cluster - 1
+```
+
+
+```{r}
+c6_cases_new_confirmed
+```
+
+```{r}
+write.csv(c6_cases_new_confirmed, "data/c6_country_clusters_cache.csv",
+          row.names=FALSE)
+```
+

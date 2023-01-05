@@ -1,0 +1,230 @@
+---
+title: "hmm"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+library(ggthemes)
+library(tidyverse)
+library(dplyr)
+library(plotly)
+library(DT)
+
+```
+
+```{r}
+
+
+covid_data <- read.csv("../PROJECT/joined_epi_gov_data.csv",
+                       stringsAsFactors = FALSE,
+                       check.names =  FALSE)
+
+covid_data$date <- as.Date(covid_data$date)
+
+```
+
+
+
+```{r}
+normalise = function(series) {
+  subset <- series[!is.na(series)]
+  norm = (series - mean(subset))/(max(subset) - min(subset))
+}
+
+non_nulls <- function(series) {
+  return (series[!is.na(series)])
+}
+
+# covid_data$new_confirmed_norm = normalise(covid_data$new_confirmed)
+covid_data = covid_data %>% 
+  group_by(country_name) %>% mutate(
+    new_confirmed_norm = (new_confirmed - mean(non_nulls(new_confirmed)))/(max(non_nulls(new_confirmed)) - min(non_nulls(new_confirmed)))
+  )
+```
+
+
+
+```{r}
+case_cols = c(    'new_confirmed', 'new_deceased', 'new_recovered',
+       'new_tested', 'total_confirmed', 'total_deceased', 'total_recovered',
+       'total_tested')
+
+policy_cols= c( 'school_closing', 'workplace_closing',
+       'cancel_public_events', 'restrictions_on_gatherings',
+       'public_transport_closing', 'stay_at_home_requirements',
+       'restrictions_on_internal_movement', 'international_travel_controls',
+       'income_support', 'debt_relief', 'fiscal_measures',
+       'international_support', 'public_information_campaigns',
+       'testing_policy', 'contact_tracing',
+       'emergency_investment_in_healthcare', 'investment_in_vaccines',
+       'facial_coverings', 'vaccination_policy', 'stringency_index')
+
+```
+
+```{r}
+df <- covid_data
+```
+
+Running a describe on the case columns, we can see that there are a number of negative cases. 
+
+```{r}
+nrow(df)
+```
+
+
+A few observations about these values:
+- There are 79,500 NAs in new_recovered,  and 49,000 in new_tested, which means some countries really don't care about tracking these values. Comparing them might make less sense, so we'll drop those columns
+
+```{r}
+drop_name = c('new_recovered', 'new_tested','total_recovered', 'total_tested')
+df = df[, ! names(df) %in% drop_name]
+
+```
+
+```{r}
+case_cols <- case_cols[!case_cols %in% drop_name]
+```
+
+
+
+```{r}
+df[case_cols] %>% summary
+```
+
+From domain experience, at the start of covid, countries weren't as equipped to record cases and hospitalised patients, but the number of hospitalisations would also be very few, so all nulls at the beginning of the period will be imputed with zeroes. 
+
+Nulls in the middle of recording, on the other hand, suggest a lack of recording, but without a better value to impute, we'll forward fill
+
+
+```{r}
+df = df %>%
+  group_by(country_name) %>%
+  fill(c(case_cols, policy_cols))
+```
+
+
+
+Now we can safely impute the rest of the nulls as zeroes:
+
+```{r}
+
+for (col in case_cols) {
+  df[is.na(df[col]), col] = 0  
+}
+
+```
+
+
+Now, negative values in the case columns means the country overestimated, so we need to adjust the values. Imputing negatives as 0 is probably fine, given that most of the adjustments have been < 10 cases. Some, e.g. Puerto Rico had adjustments of 32,000 when all their prior days didn't even sum up to that. 
+
+
+```{r}
+for (col in case_cols) {
+  df[df[col] < 0, col] <- 0
+}
+
+```
+
+
+```{r}
+df[policy_cols] %>% summary
+```
+
+```{r}
+
+
+df[is.na(df$facial_coverings),]
+```
+
+
+```{r}
+
+df %>% group_by(key) %>%
+  summarise(count_nulls=sum(is.na(facial_coverings))) %>%
+  arrange(count_nulls)
+
+
+```
+
+```{r}
+tail(df[df$country_name == "Liechtenstein",], 100)
+
+```
+
+
+
+
+```{r}
+tabyee = df %>% group_by(country_name, key) %>% 
+  summarise(stringency_nulls = sum(is.na(stringency_index)),
+            mask_nulls = sum(is.na(facial_coverings)),
+            vaccination_nulls = sum(is.na(vaccination_policy)),
+            testing_nulls = sum(is.na(testing_policy)),
+            contact_nulls = sum(is.na(contact_tracing)),
+            income_nulls = sum(is.na(income_support)),
+            debt_nulls = sum(is.na(debt_relief)),
+            ) %>%
+  arrange(stringency_nulls)
+
+DT::datatable(tabyee)
+  
+```
+
+Dropping Liechtenstein and Comoros 
+
+```{r}
+country_exclusion = c("Liechtenstein", "Comoros")
+df = df[!df$country_name %in% country_exclusion,]
+```
+
+
+
+```{r}
+df[is.na(df)] <- 0
+```
+
+
+
+
+```{r}
+names(df)
+```
+
+
+
+
+
+```{r}
+df %>% summary
+```
+
+```{r}
+
+df2 = df[df$country_name %in% c("Australia", "United States of America", "Singapore", "Mexico", "united Kingdom", "China"),]
+plt = ggplot() + 
+  geom_line(data=df2, aes(x=date, y=stringency_index, group=country_name, color=country_name), color='red') + 
+  geom_line(data=df2, aes(x=date, y=new_confirmed, group=country_name, color=country_name), color="blue") + facet_wrap(~country_name, scale="free_y") + 
+  ylab("Number of cases") + 
+  labs(color = "Country") + 
+  ggtitle("New cases and hospital patients by Country")
+
+plotly::ggplotly(plt)
+
+```
+
+
+```{r}
+
+write.csv(df, "epi_gov_data_cleaned.csv")
+
+```
+
+
+
+
+
+
+

@@ -1,0 +1,158 @@
+---
+title: "DATA3888 Test 3"
+author: "Jonathan Then"
+date: "5/3/2021"
+output: html_document
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(readxl)
+library(tibble)
+library(janitor)
+library(reshape2)
+library(ggplot2)
+library(ggthemes)
+library(plotly)
+library(pheatmap)
+library(cluster)
+library(factoextra)
+```
+
+```{r, warning=FALSE, message=FALSE}
+data_raw = read_csv("epi_gov_data_cleaned.csv")
+data = data_raw
+
+data$date <- as.Date(data$date) #Convert to Date
+
+data[is.na(data)] <- 0 #Fill NAs with 0s
+
+data$new_confirmed <- replace(data$new_confirmed, data$new_confirmed < 0, 0)
+data$new_deceased <- replace(data$new_deceased, data$new_deceased < 0, 0)
+
+```
+
+```{r}
+stringency_matrix <- data %>% 
+  dplyr::select(country_name, date, stringency_index) %>%
+  pivot_wider(names_from = country_name, values_from = stringency_index) %>%
+  arrange(date) %>% 
+  replace(is.na(.), 0) %>%
+  as.data.frame()
+
+rownames(stringency_matrix) <- stringency_matrix$date
+stringency_matrix <- stringency_matrix %>% dplyr::select(-date)
+
+#Remove Liechtenstein and Comoros
+stringency_matrix = subset(stringency_matrix, select = -c(Liechtenstein, Comoros, Macau) )
+```
+
+```{r}
+stringency_matrix_norm <- apply(stringency_matrix, 2, function(x) x/sum(x))
+stringency_matrix_norm_dist <- dist(t(stringency_matrix_norm), method = "manhattan")
+hclust_res <- hclust(stringency_matrix_norm_dist, method="ward.D2")
+hclust_cluster <- cutree(hclust_res, k = 5)%>% as.factor %>% as.data.frame
+```
+
+```{r}
+plot(hclust_res)
+```
+
+```{r}
+hclust_cluster <- cutree(hclust_res, k = 5) %>% as.factor %>% as.data.frame 
+colnames(hclust_cluster) = "clust_res"
+pheatmap(t(stringency_matrix_norm), 
+         cluster_cols = FALSE,
+         main = "Stringency Index",
+         annotation_row = hclust_cluster,
+         clustering_distance_rows = "manhattan",
+         clustering_method = "ward.D2")
+```
+
+```{r}
+## shapping it back to a long format
+df_covid <- reshape2::melt(stringency_matrix_norm)
+colnames(df_covid) <- c("date", "location", "stringency_norm")
+df_covid <- df_covid %>% mutate(date = as.Date(date))
+df_covid$cluster <-  hclust_cluster[as.character(df_covid$location), 1]
+
+p = ggplot() +
+  geom_line(data = df_covid, aes(x = date, y = stringency_norm, color = location)) +
+  facet_wrap(~cluster, ncol = 1) +  ## argument scale allow you to adjust whether to have the same y-axis or not
+  theme_bw() + ylab("Normalised values") + labs(title = "Stringency Index")
+
+ggplotly(p)
+```
+
+```{r}
+world_map <- map_data("world2")
+
+world_map <- world_map %>%
+  mutate(region = replace(region, region == "UK","United Kingdom")) %>% 
+  mutate(region = replace(region, region == "USA","United States of America")) 
+
+specific_date = "2021-01-01"
+df_covid_day <- df_covid %>% filter(date == specific_date)
+world_map_with_data <- merge(world_map, df_covid_day, 
+by.x = "region", by.y = "location",
+all.x = TRUE)
+world_map_with_data <- world_map_with_data[order(world_map_with_data$order), ]
+
+```
+
+```{r}
+ggplot(world_map_with_data, 
+       aes(x = long, y = lat, group = group, fill = cluster)) +
+  geom_polygon() +
+  xlab("") + ylab("") +  ggtitle("Map of World") +
+  theme_void() +
+  theme(legend.position = "bottom", aspect.ratio = 0.6) +
+  labs(title = paste('COVID19: Stringency Index Clusters'),
+       fill = "")
+
+```
+
+```{r}
+countries <- c("Macau")
+
+data_sel <- data[data$country_name %in% countries, ]
+
+g_stringency <- ggplot(data_sel, aes(x = date, y = stringency_index, 
+                            group = country_name, color = country_name)) +
+  geom_line(lwd = 1) +
+  theme_bw() +
+  scale_color_tableau(palette = "Tableau 20") +
+  ylab("Stringency Index") +
+  labs(color = "Country")
+
+g_stringency
+
+```
+
+```{r}
+#Gap Statistic Method
+
+gap_stat <- clusGap(stringency_matrix_norm, FUN = hcut, nstart = 25, K.max = 20, B = 50)
+fviz_gap_stat(gap_stat)
+
+```
+
+```{r}
+#Elbow Method
+
+fviz_nbclust(stringency_matrix_norm, FUN = hcut, method = "wss")
+```
+
+```{r}
+#Silhouette Method
+
+fviz_nbclust(stringency_matrix_norm, FUN = hcut, method = "silhouette")
+```
+
+```{r}
+test <- USArrests
+```
+
+```{r}
+
+```

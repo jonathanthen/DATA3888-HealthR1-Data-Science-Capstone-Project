@@ -1,0 +1,258 @@
+---
+title: "clustering"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(plotly)
+library(zoo)
+```
+
+Reading in a matrix-ed version of the new cases, available on google drive.
+
+
+```{r}
+df = read.csv("new_cases_matrix.csv")
+
+head(df)
+
+```
+
+This data is no NAs.
+
+```{r}
+sum(is.na(df))
+```
+```{r}
+colSums(dplyr::select(df, -date))
+```
+
+
+
+
+## Clustering
+ 
+Since Turkmenistan,  Kiribati, and Tonga have zero cases reported, we remove them from the dataset as the normalisation would yield infinity. 
+
+
+```{r}
+
+new_cases <- df %>% dplyr::select(-date, -Turkmenistan, -Kiribati, -Tonga)
+
+
+```
+
+
+```{r}
+new_cases
+```
+
+
+
+```{r}
+new_case_matrix_norm <- apply(new_cases, 2, function(x) x/sum(x))
+new_case_matrix_norm_dist <- dist(t(new_case_matrix_norm), method = "manhattan")
+
+```
+
+
+
+
+
+
+
+
+```{r}
+hclust_res <- hclust(new_case_matrix_norm_dist, method="ward.D2")
+hclust_cluster <- cutree(hclust_res, k = 15) %>% as.factor %>% as.data.frame 
+```
+
+
+An interactive plot isn't particularly helpful here because we have SO many countries together. 
+
+
+```{r}
+df_covid <- reshape2::melt(new_case_matrix_norm)
+colnames(df_covid) <- c("date", "country_name", "new_confirmed")
+df_covid <- df_covid %>% mutate(date = as.Date(date))
+df_covid$cluster <-  hclust_cluster[as.character(df_covid$country_name), 1]
+
+g = ggplot() +
+  geom_line(data = df_covid, aes(x = date, y = new_confirmed, color = country_name)) +
+  facet_wrap(~cluster, ncol = 1) +  ## argument scale allow you to adjust whether to have the same y-axis or not
+  theme_bw() + ylab("Normalised values") + labs(title = "COVID new cases")
+
+plotly::ggplotly(g)
+
+```
+
+
+Let's try plotting the hclust as a dendrogram
+
+```{r}
+plot(hclust_res, cex=0.6)
+```
+
+
+```{r}
+hclust_cluster <- cutree(hclust_res, k = 5) %>% as.factor %>% as.data.frame 
+colnames(hclust_cluster) = "clust_res"
+pheat <- pheatmap(t(new_case_matrix_norm), 
+         cluster_cols = FALSE,
+         main = "New cases",
+         annotation_row = hclust_cluster,
+         clustering_distance_rows = "manhattan",
+         clustering_method = "ward.D2",
+         
+         cex=0.5)
+
+```
+This is virtually incomprehensible, so let's take a look at individual clusters ay
+
+
+```{r}
+CLUST_NUM = 15
+
+
+g = ggplot() +
+  geom_line(data = df_covid[df_covid$cluster == CLUST_NUM,], aes(x = date, y = new_confirmed, color = country_name)) +
+  facet_wrap(~cluster, ncol = 1) +  ## argument scale allow you to adjust whether to have the same y-axis or not
+  theme_bw() + ylab("Normalised values") + labs(title = "COVID new cases")
+
+plotly::ggplotly(g)
+```
+
+
+
+
+# Functionalising it to test some parameters quickly
+
+Overall visualisations
+- Small versions of all curves if possible
+- Select cluster number to view
+- Summary of all clusters, how many countries in each, and a preview of which countries are in it
+
+
+**We Will Also Add Smoothing Or Some Kind Of Standardisation**
+
+
+```{r}
+# Minmax scaling 
+min_max_scale = function(series) {
+  return ((series - min(series))/(max(series) - min(series)))
+}
+
+
+new_cases_scaled <- apply(new_cases, 2, min_max_scale)
+```
+
+
+And rerunning clustering to get our dendrogram!
+
+
+```{r}
+new_cases_scaled_dist <- dist(t(new_cases_scaled), method = "manhattan")
+
+hclust_scaled_res <- hclust(new_cases_scaled_dist, method="ward.D2")
+hclust_scaled_cluster <- cutree(hclust_res, k = 15) %>% as.factor %>% as.data.frame 
+colnames(hclust_scaled_cluster) = "clust_num"
+```
+
+And here's our dendrogram!
+
+```{r}
+plot(hclust_scaled_res, cex=0.6)
+```
+
+```{r}
+hclust_scaled_cluster %>% group_by(clust_num) %>% count()
+```
+So Cluster 8, 14, and 15 have the fewest countries in the cluster, while Cluster 4 has the most. We'll take a closer look to figure out why. 
+
+
+```{r}
+
+datatable(hclust_scaled_cluster)
+```
+
+```{r}
+df_covid_scaled <- reshape2::melt(new_cases_scaled)
+colnames(df_covid_scaled) <- c("date", "country_name", "new_confirmed_scaled")
+df_covid_scaled$date <- as.Date(df$date)
+df_covid_scaled$cluster <-  hclust_scaled_cluster[as.character(df_covid_scaled$country_name), 1]
+```
+
+```{r}
+df_covid_scaled
+```
+
+
+```{r}
+which(new_cases_scaled[1,] %in% c("Brunei"))
+```
+```{r}
+data.frame(new_cases_scaled)
+```
+
+
+
+
+```{r}
+CLUST_NUM = 3
+
+
+g = ggplot() +
+  geom_line(data = df_covid_scaled[df_covid_scaled$cluster == CLUST_NUM,], aes(x = date, y = new_confirmed_scaled, color = country_name)) +
+  facet_wrap(~cluster, ncol = 1) +  ## argument scale allow you to adjust whether to have the same y-axis or not
+  theme_bw() + ylab("Normalised values") + labs(title = "COVID new cases (scaled)")
+
+plotly::ggplotly(g)
+```
+
+
+
+
+
+
+```{r}
+a <- df %>% dplyr::select( -Turkmenistan, -Kiribati, -Tonga) 
+a$date = as.Date(a$date)
+
+
+```
+
+
+
+```{r}
+
+
+countries = c("Australia", "United States of America", "China", "Singapore", "France")
+```
+```{r}
+a[colnames(a) %in% countries]
+```
+
+
+
+```{r}
+a[countries]
+```
+
+
+
+```{r}
+a[colnames(a) %in% countries] %>% filter( 
+                                        date <= max(a$date), 
+                                        date >= min(a$date)
+                                        )
+```
+
+
+```{r}
+a[colnames(a) %in% countries,] %>% filter(date <= max(a$date),
+             date > min(a$date))
+```
+

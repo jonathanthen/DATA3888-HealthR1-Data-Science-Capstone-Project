@@ -1,0 +1,141 @@
+---
+title: "Bubble Chart Visualisation"
+author: "Jonathan Then"
+date: "5/22/2021"
+output: html_document
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(readxl)
+library(tibble)
+library(janitor)
+library(reshape2)
+library(ggplot2)
+library(ggthemes)
+library(plotly)
+library(pheatmap)
+library(cluster)
+library(factoextra)
+```
+
+```{r, warning=FALSE, message=FALSE}
+data_raw = read_csv("data/data_smoothed_standardised.csv")
+
+data = data_raw
+```
+
+
+```{r}
+p = data %>%
+    group_by(country_name) %>%
+    mutate(country_name = country_name) %>%
+    mutate(max_total = max(total_confirmed)) %>%
+    mutate(max_deceased = max(total_deceased)) %>%
+    mutate(max_stringency = max(stringency_index)) %>%
+    mutate(perc_infected_pop = max_total/population) %>%
+    arrange(desc(gdp_per_capita)) %>%
+    ggplot(aes(x=perc_infected_pop, y=max_stringency, size=gdp_per_capita, color=constitutional_form)) +
+      geom_point(alpha=1) +
+      scale_size(range = c(.5, 12), name="GDP per Capita") + 
+      scale_color_brewer(palette = "Paired") +
+      xlab("Percentage of Infected Population") +
+      ylab("Maximum Stringency") +
+      labs(color = "Constitutional Form")
+
+p
+```
+
+Smaller economy countries tend to get less infected.
+
+```{r}
+p = data %>%
+    group_by(country_name) %>%
+    mutate(country_name = country_name) %>%
+    mutate(max_total = max(total_confirmed)) %>%
+    mutate(max_deceased = max(total_deceased)) %>%
+    mutate(max_stringency = max(stringency_index)) %>%
+    mutate(perc_infected_pop = max_total/population) %>%
+    mutate(perc_death_pop = max_deceased/population) %>%
+    arrange(desc(gdp_per_capita)) %>%
+    ggplot(aes(x=perc_death_pop, y=perc_infected_pop, size=gdp_per_capita, color=constitutional_form)) +
+      geom_point(alpha=1) +
+      scale_size(range = c(.5, 12), name="GDP per Capita") + 
+      scale_color_brewer(palette = "Paired") + 
+      xlab("Percentage of Deceased Population") +
+      ylab("Percentage of Infected Population") +
+      labs(color = "Constitutional Form")
+
+p
+```
+There seems to be a correlation between the number of infected cases and number of deaths due to COVID. 
+
+```{r, warning=FALSE, message=FALSE}
+c6_cases = read_csv("data/c6_cases_norm.csv")
+c6_stringency = read_csv("data/c6_stringency.csv")
+
+df_cases <- merge(data, c6_cases[, c("country_name", "som_cluster")], by=c("country_name","country_name"))
+df_stringency <- merge(data, c6_stringency[, c("country_name", "som_cluster")], by=c("country_name","country_name"))
+```
+
+
+```{r}
+#Clustered New Cases
+cluster_number = 2
+
+p = df_cases %>%
+    group_by(country_name) %>%
+    filter(som_cluster == cluster_number) %>%
+    mutate(max_total = max(total_confirmed)) %>%
+    mutate(max_deceased = max(total_deceased)) %>%
+    mutate(max_stringency = max(stringency_index)) %>%
+    mutate(perc_infected_pop = max_total/population) %>%
+    mutate(perc_death_pop = max_deceased/population) %>%
+    arrange(desc(gdp_per_capita)) %>%
+    ggplot(aes(x=perc_infected_pop, y=max_stringency, size=gdp_per_capita, color=constitutional_form)) +
+      geom_point(alpha=1) +
+      scale_size(range = c(.5, 12), name="GDP per Capita") + 
+      scale_color_brewer(palette = "Paired") + 
+      xlab("Percentage of Infected Population") +
+      ylab("Maximum Stringency") +
+      labs(color = "Constitutional Form") +
+      scale_x_continuous(limits = c(0, 0.2)) + 
+      scale_y_continuous(limits = c(0, 100))
+
+q = df_cases %>%
+    group_by(country_name) %>%
+    filter(som_cluster == cluster_number) %>%
+    distinct(country_name)
+q
+p
+```
+
+
+```{r}
+#Clustered Stringency
+cluster_number = 6
+
+p = df_stringency %>%
+    group_by(country_name) %>%
+    filter(som_cluster == cluster_number) %>%
+    mutate(max_total = max(total_confirmed)) %>%
+    mutate(max_deceased = max(total_deceased)) %>%
+    mutate(max_stringency = max(stringency_index)) %>%
+    mutate(perc_infected_pop = max_total/population) %>%
+    mutate(perc_death_pop = max_deceased/population) %>%
+    arrange(desc(gdp_per_capita)) %>%
+    ggplot(aes(x=perc_death_pop, y=perc_infected_pop, size=gdp_per_capita, color=constitutional_form)) +
+      geom_point(alpha=1) +
+      scale_size(range = c(.5, 12), name="GDP per Capita") + 
+      scale_color_brewer(palette = "Paired") + 
+      xlab("Percentage of Deceased Population") +
+      ylab("Percentage of Infected Population") +
+      labs(color = "Constitutional Form")
+
+q = df_stringency %>%
+    group_by(country_name) %>%
+    filter(som_cluster == cluster_number) %>%
+    distinct(country_name)
+q
+p
+```

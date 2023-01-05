@@ -1,0 +1,362 @@
+---
+title: "Lag_time"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(plotly)
+library(zoo)
+
+```
+
+# Lag Time Investigation
+
+Objectives:
+1. Determine a suitable lag time measure between government response and new covid cases.
+2. Identify average lag time for different countries and across time.
+
+
+## 1. Reading in the Cleaned Dataset
+
+```{r}
+df = read.csv("epi_gov_data_cleaned.csv")
+
+head(df)
+
+
+```
+
+Because cases can vary from 0 to like 500k, while stringency index is only ranged from 0 to 100, we'll standardise/normalise the data so they can be plotted on the same graph. 
+
+```{r}
+min_max_scale = function(series) {
+  return ((series - min(series))/(max(series) - min(series)))
+}
+```
+
+
+
+```{r}
+# Minmax scaling
+df$new_confirmed_minmax = df$new_confirmed - min(df$new_confirmed)
+
+
+df = df %>%
+  group_by(country_name) %>%
+  mutate(
+    new_confirmed_minmax = min_max_scale(new_confirmed),
+    stringency_minmax = min_max_scale(stringency_index)
+    
+  )
+
+```
+
+
+
+## 2. Intial Correlation and Lag musings
+
+Referencing: https://online.stat.psu.edu/stat510/lesson/8/8.2
+- Cross Correlation Functions (CCF) is helpful for identifying lags of the x-var that might be useful in predicting y
+- Tests many combinations of lag time units (h=0, +-1, +- 2, etc)
+- I believe this assumes x is the sole predictor of y, which is also fine because for the most part, it makes sense for government response to be determined by the number of covid cases. 
+
+
+Plotting cases against stringency as an initial trial. 
+```{r}
+
+# Plotting our cases against government responses first
+df_sample = df[df$country_name %in% c("Australia", "United States of America", "Singapore", "Mexico", "United Kingdom", "China"),]
+
+plt = ggplot() + 
+  geom_line(data=df_sample, aes(x=date, y=(stringency_index/100), group=country_name,
+                         color=country_name), color='red') + 
+  geom_line(data=df_sample, aes(x=date, y=new_confirmed_minmax, group=country_name,
+                         color=country_name), color="blue") +
+  facet_wrap(~country_name, scale="free_y") + 
+  ylab("Number of cases vs stringency (min-max scaled)") + 
+  labs(color = "Country") + 
+  ggtitle("New cases and government stringency by country")
+
+plotly::ggplotly(plt)
+
+```
+
+We do find some level of association on a macro level, some more than others. E.g. Australia and Singapore seem to be more variable with their adjustments, lowering when cases are low and raising them when cases are high.
+
+USA and Mexico on the other hand, seem to have maintained high stringency all throughout. 
+
+
+First doing a study on Australia:
+
+```{r}
+# Setting up time series
+
+aus_df = df[df$country_name == "Australia",]
+
+cases = ts(aus_df$new_confirmed)
+stringency = ts(aus_df$stringency_index)
+
+ccf(cases, stringency)
+```
+
+```{r}
+ccf(cases, stringency,
+                 main="Cases vs Stringency ACF Lag", xlab="Lag (days)")
+
+```
+
+
+```{r}
+
+library(forecast)
+ggCcf(cases, stringency, main="AAH")
+
+
+```
+
+
+
+
+
+Running CCF on Australia gives us a very wide range of possible lag times. It peaks somewhere around the h= -10 mark, suggesting about a week of lag between cases and stringency. 
+
+Let's run it again on a min max scaled cases
+
+```{r}
+ccf(ts(aus_df$new_confirmed_minmax), ts(aus_df$stringency_index))
+
+```
+
+
+And with log transformation so the big cases are less spikey. Because we have zero cases in the dataset, we'll do a log (cases + 1), which has minimal impact on the scaling.
+
+
+```{r}
+ccf(log(cases+1), stringency)
+```
+
+Ahk Lag aint too clear but it's also likely because stringency has a lower propensity to change in the short term-- i.e. once you increase/decrease stringency, it will likely remain that way for the next few days.
+
+```{r}
+ccf_values = ccf(cases, stringency)
+ccf_values
+```
+
+If we check out the ccf values themselves, which contains the correlation for each time lag, we can see that a 12 day lag has the highest correlation but they're very similar around the 7 - 16 day lag. 
+
+Meaning that on average over the 2020 year, Australia's government takes about 1-2 weeks to respond to covid cases.
+
+Key word being over the 2020 year. 
+
+### Prelim lag over months
+
+Our hypothesis is that Government's response to covid have changed over the course of the year.
+
+So now we'll try segmenting the data by month/quarter and calculate lag on that
+
+```{r}
+ccf_values = ccf(
+  ts(aus_df[aus_df$date < "2020-04-01",]$new_confirmed),
+  
+  ts(aus_df[aus_df$date < "2020-04-01",]$stringency_index)
+  )
+ccf_values
+
+
+```
+
+```{r}
+ccf_values = ccf(
+  ts(aus_df[(aus_df$date >= "2020-03-01")&(aus_df$date < "2020-04-01"),]$new_confirmed),
+  
+  ts(aus_df[(aus_df$date >= "2020-03-01")&(aus_df$date < "2020-04-01"),]$stringency_index)
+  )
+ccf_values
+```
+
+
+
+
+```{r}
+ccf_values = ccf(
+  ts(aus_df[(aus_df$date >= "2020-04-01")&(aus_df$date < "2020-07-01"),]$new_confirmed),
+  
+  ts(aus_df[(aus_df$date >= "2020-04-01")&(aus_df$date < "2020-07-01"),]$stringency_index)
+  )
+ccf_values
+
+```
+
+
+```{r}
+ccf_values = ccf(
+  ts(aus_df[(aus_df$date >= "2020-07-01")&
+              (aus_df$date < "2020-10-01"),]$new_confirmed),
+  
+  ts(aus_df[(aus_df$date >= "2020-07-01")&
+              (aus_df$date < "2020-10-01"),]$stringency_index)
+  )
+ccf_values
+```
+
+
+```{r}
+ccf_values = ccf(
+  ts(aus_df[(aus_df$date >= "2020-10-01")&
+              (aus_df$date < "2021-01-01"),]$new_confirmed),
+  
+  ts(aus_df[(aus_df$date >= "2020-10-01")&
+              (aus_df$date < "2021-01-01"),]$stringency_index)
+  )
+ccf_values
+```
+
+
+HMMM ok so over the course of 2020 quarters, we see this relationship:
+- First quarter (Jan - Mar): 0 day lag with 80% correlation
+- Second quarter (Apr - Jun): 8 - 9 days, with 40% correlation
+- Third quarter (Jul - Sep): 12 - 13 day reverse lag with -68% correlation. This means govt stringency actually came before cases. Negative correlation means more stringent --> cases went down 2 weeks later. 
+- Fourth quarter (Oct - Dec): 1 day lag. 
+
+
+Seems interesting, but we also note that covid cases basically went on a downspike during the third period, which may explain the reversal in lag. 
+Other issues with correlation coefficients (simple)
+- Not robust to outliers (which we have a lot of in covid cases)
+- Assumes homoscedasticity = variance homogenous (which it is not)
+
+But still, with more window sizes and bins we might be able to build a better picture of lag time. 
+
+```{r}
+ccf_values = ccf(
+  ts(aus_df[(aus_df$date >= "2021-01-01"),]$new_confirmed),
+  
+  ts(aus_df[(aus_df$date >= "2021-01-01"),]$stringency_index)
+  )
+ccf_values
+```
+
+
+## 3. ROLLing correlation
+
+BECAUSE static correlation is not appropriate. 
+
+We use `zoo::rollapply`
+
+
+```{r}
+
+roll_corr_monthly = rollapply(aus_df[c("new_confirmed", "stringency_index")],
+          width=30, 
+          function(x) cor(x[,1], x[,2]), 
+          by.column=FALSE)
+
+```
+
+
+```{r}
+aus_df$date = as.Date(aus_df$date)
+```
+
+
+```{r}
+date_x = aus_df$date[30:nrow(aus_df)]
+```
+
+
+```{r}
+plot(roll_corr_monthly)
+```
+
+
+```{r}
+plot(date_x, roll_corr_monthly, 'l')
+```
+
+```{r}
+roll_corr_df = data.frame(list(date=date_x, roll_corr = roll_corr_monthly))
+```
+
+
+```{r}
+ggplot() +
+    geom_hline(yintercept=0) + 
+  geom_point(data=roll_corr_df, aes(x=date_x, y=roll_corr_monthly),
+    color="blue") +
+
+  theme_minimal() + 
+  ggtitle("Rolling correlation over past 30 days")
+```
+
+Ok so over the course of the month is probably not the best way to do this. Let's try 90 days and see if we can get a match
+
+```{r}
+plot_rolling_corr = function(ndays=30, df) {
+  df$date = as.Date(df$date)
+  roll_corr_calc = rollapply(df[c("new_confirmed", "stringency_index")],
+          width=ndays, 
+          function(x) cor(x[,1], x[,2]), 
+          by.column=FALSE)
+  date_ndays = df$date[ndays:nrow(df)]
+  
+  roll_corr_df = data.frame(list(date=date_ndays, roll_corr = roll_corr_calc))
+  
+  ggplot() +
+  geom_line(data = roll_corr_df, aes(x=date_ndays, y=roll_corr_calc), color="blue") +
+      geom_hline(yintercept=0, color='lightgrey') + 
+  theme_minimal() + 
+  ggtitle(paste("Rolling correlation over past", ndays, "days"))
+
+}
+```
+
+
+```{r}
+plot_rolling_corr(90, aus_df)
+```
+
+
+Next Steps:
+- Rolling correlation over multiple time periods as interactive thing
+- Interactive plot calculating lag time in days
+^ Both stratified by country and time period
+
+
+```{r}
+
+us_df = df[df$country_name == "United States of America",]
+
+ccf(ts(us_df$new_confirmed), ts(us_df$stringency_index)
+)
+
+
+```
+
+```{r}
+us_df = df[df$country_name == "France",]
+
+ccf(ts(us_df$new_confirmed), ts(us_df$stringency_index)
+)
+
+```
+
+
+
+
+
+
+
+Resources:
+- https://www.listendata.com/2017/04/how-to-standardize-variable-in-regression.html
+- https://towardsdatascience.com/four-ways-to-quantify-synchrony-between-time-series-data-b99136c4a9c9
+- https://nwfsc-timeseries.github.io/atsa-labs/sec-tslab-decomposition-of-time-series.html
+- https://www.statology.org/rolling-correlation-in-r/
+- 
+
+
+
+
+
+

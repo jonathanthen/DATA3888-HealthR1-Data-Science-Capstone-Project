@@ -1,0 +1,206 @@
+---
+title: "clustering"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(plotly)
+library(zoo)
+```
+
+
+
+```{r}
+df = read.csv("epi_gov_data_cleaned.csv")
+dim(df)
+
+head(df)
+
+```
+
+```{r}
+df <- df[df$country_name %in%
+            c("Brazil", "Germany", "Australia", "United Kingdom", "Italy", "New Zealand",
+"United States", "Spain", "Singapore", "India", "Japan", "Norway", "United States of America")
+            ,]
+```
+
+```{r}
+## moving average
+wrapRollmean <- function(data, k = 10){
+  zoo::rollmean(data, k = k, fill = NA)
+}
+
+## loess
+wrapLoess <- function(data, x=1:length(data), span=0.1) {
+  ind <- !is.na(data); loess_fit <- rep(NA, length(data))
+  loess_fit[ind] <- loess(data ~ as.numeric(x), span = span)$fitted
+  loess_fit 
+}
+
+## Savitzky-Golay smoothing filter. 
+wrapSG <- function(data, p=3, n=60){
+  ind <- !is.na(data); fit <- rep(NA, length(data))
+  fit[ind] <- signal::sgolayfilt(data[ind], p = p, n = n)
+  fit
+}
+
+## Cleaning
+df$new_confirmed[df$new_confirmed < 0] <- NA
+covid_list <- split(df$new_confirmed, df$country_name, drop=TRUE) 
+covid_dates <- split(df$date, df$country_name, drop=TRUE) 
+
+## apply your selected smoother
+new_cases_loess <- lapply(covid_list, wrapLoess, span=0.1)
+df$new_cases_loess <- unlist(new_cases_loess)
+
+
+## All the dots
+b0 <- ggplot() +
+  geom_point(data = df,
+             aes(x = date, y = new_confirmed, group = country_name, color = country_name), color = "grey")
+## b0
+
+## Split the data using facet_wrap
+b1 <- ggplot() +
+  geom_point(data = df,
+             aes(x = date, y = new_confirmed, group = country_name, color = country_name), color = "grey") +
+  facet_wrap(~country_name, scale = "free_y")
+## b1
+
+## Overlay the lines
+b2 <-  ggplot() +
+  geom_point(data = df,
+             aes(x = date, y = new_confirmed, group = country_name, color = country_name), color = "grey") +
+  geom_line(data = df,
+            aes(x = date, y = new_cases_loess, group = country_name, color = country_name),
+            lwd = 1, color = "red") +
+  facet_wrap(~country_name, scale = "free_y")
+## b2
+
+## Add the labels and adjust the ascetic
+b2 +
+  theme_bw() +
+  ylab("Number of cases") +
+  scale_y_continuous(labels = scales::comma, trans = "log10") +
+  labs(color = "Country/Region")
+```
+
+
+
+```{r}
+min_max_scale = function(series) {
+  return ((series - min(series))/(max(series) - min(series)))
+}
+
+# df$new_confirmed_minmax = df$new_confirmed - min(df$new_confirmed)
+
+
+df = df %>%
+  group_by(country_name) %>%
+  mutate(
+    new_confirmed_minmax = min_max_scale(new_confirmed),
+    stringency_minmax = min_max_scale(stringency_index)
+  )
+```
+
+```{r}
+df[rowSums(is.na(df)) > 0,]
+```
+
+
+## Clustering
+
+
+
+```{r}
+
+# new_case_matrix <- df %>% 
+#   dplyr::select(country_name, date, new_confirmed) %>%
+#   pivot_wider(names_from = country_name, values_from = new_confirmed) %>%
+#   arrange(date) %>% 
+#   replace(is.na(.), 0) %>%
+#   as.data.frame()
+# 
+# rownames(new_case_matrix) <- new_case_matrix$date
+# new_case_matrix <- new_case_matrix %>% dplyr::select(-date)
+
+new_case_matrix <- df %>%
+  dplyr::select(country_name, date, new_cases_loess) %>%
+  pivot_wider(names_from = country_name, values_from = new_cases_loess) %>%
+  arrange(date) %>%
+  replace(is.na(.), 0) %>%
+  as.data.frame()
+
+rownames(new_case_matrix) <- new_case_matrix$date
+new_case_matrix <- new_case_matrix %>% dplyr::select(-date)
+
+```
+
+
+```{r}
+new_case_matrix_norm <- apply(new_case_matrix, 2, function(x) x/sum(x))
+new_case_matrix_norm_dist <- dist(t(new_case_matrix_norm), method = "manhattan")
+
+```
+
+
+```{r}
+class(new_case_matrix_norm_dist)
+
+new_case_matrix_norm_dist[is.na(new_case_matrix_norm_dist)] <- 0
+new_case_matrix_norm_dist[is.na(new_case_matrix_norm_dist)]
+```
+
+
+```{r}
+hclust_res <- hclust(new_case_matrix_norm_dist, method="ward.D2")
+hclust_cluster <- cutree(hclust_res, k = 5) %>% as.factor %>% as.data.frame 
+```
+
+
+```{r}
+df_covid <- reshape2::melt(new_case_matrix_norm)
+colnames(df_covid) <- c("date", "country_name", "new_confirmed_minmax")
+df_covid <- df_covid %>% mutate(date = as.Date(date))
+df_covid$cluster <-  hclust_cluster[as.character(df_covid$country_name), 1]
+
+g = ggplot() +
+  geom_line(data = df_covid, aes(x = date, y = new_confirmed_minmax, color = country_name)) +
+  facet_wrap(~cluster, ncol = 1) +  ## argument scale allow you to adjust whether to have the same y-axis or not
+  theme_bw() + ylab("Normalised values") + labs(title = "COVID new cases")
+
+plotly::ggplotly(g)
+```
+
+```{r}
+g = ggplot(df, aes(x = date, y = new_confirmed, 
+                            group = country_name, color = country_name)) +
+  geom_line(lwd = 1) +
+  theme_bw() +
+  ylab("Number of __") +
+  labs(color = "Country") +
+  ggtitle("title")
+
+plotly::ggplotly(g)
+
+
+g = ggplot(df, aes(x = date, y = new_cases_loess, 
+                            group = country_name, color = country_name)) +
+  geom_line(lwd = 1) +
+  theme_bw() +
+  ylab("Number of __") +
+  labs(color = "Country") +
+  ggtitle("title")
+
+plotly::ggplotly(g)
+
+```
+
+
+
+
+

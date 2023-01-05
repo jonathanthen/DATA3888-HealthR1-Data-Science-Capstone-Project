@@ -1,0 +1,67 @@
+---
+title: "hmm"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+library(ggthemes)
+library(tidyverse)
+library(dplyr)
+library(plotly)
+library(DT)
+library(leaflet)
+library(RColorBrewer)
+library(xts)
+library(rgdal)
+
+
+```
+
+```{r}
+cov_data <- read.csv("data/data_smoothed_standardised.csv")
+
+cov_data$date <- as.Date(cov_data$date)
+
+cov_data
+
+# Matrix form 
+VALUE_COL = "new_confirmed_norm"
+key_matrix <- cov_data[c("date", "key", VALUE_COL)] %>% 
+  dcast(key ~ date, value.var=VALUE_COL)
+key_matrix[is.na(key_matrix)] <- 0
+rownames(key_matrix) <- key_matrix$key
+key_matrix <- subset(key_matrix, select = -key)
+
+```
+
+
+```{r}
+
+som_model_key <- som(
+                as.matrix(key_matrix), 
+                grid=somgrid(xdim = 4, ydim=4, 
+                            topo="hexagonal"), 
+                rlen=100, 
+                alpha=c(0.05,0.01), 
+                keep.data = TRUE,)
+
+
+som_cluster <- cutree(hclust(dist(som_model_key$codes[[1]])), 5)
+country_clusters <- data.frame(rownames(key_matrix), som_model_key$unit.classif)
+ab <- data.frame(som_cluster)
+ab$node_name = sapply(rownames(ab), substring, 2,)
+c6_cases_norm <- merge(country_clusters, ab, by.x="som_model_key.unit.classif", by.y="node_name")
+colnames(c6_cases_norm) <- c("som_node", "key", "som_cluster")
+c6_cases_norm$key <- gsub("\\.", " ", c6_cases_norm$key)
+
+CLUST_NUM = 1
+country_list <- c6_cases_norm[c6_cases_norm$som_cluster == CLUST_NUM, "key"]
+country_list
+c6_cases_norm
+
+key_matrix
+```
+

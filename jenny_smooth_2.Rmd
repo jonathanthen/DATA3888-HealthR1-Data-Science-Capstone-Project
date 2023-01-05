@@ -1,0 +1,206 @@
+---
+title: "data collection and cleaning"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(plotly)
+library(zoo)
+```
+
+
+```{r}
+df = read.csv("data/epi_gov_data_cleaned.csv")
+
+df$date <- as.Date(df$date)
+
+dim(df)
+head(df)
+
+```
+
+```{r}
+demographics <- read.csv("data/demographics.csv",
+                       stringsAsFactors = FALSE,
+                       check.names =  FALSE)
+# demographics
+df <- merge(df, demographics[, c("key", "population")], by=c("key","key")) # NA's match
+
+df$new_confirmed_pop <- df$new_confirmed/(df$population/1000000)
+df$new_deceased_pop <- df$new_deceased/(df$population/1000000)
+```
+
+```{r}
+economy <- read.csv("data/economy.csv",
+                       stringsAsFactors = FALSE,
+                       check.names =  FALSE)
+# economy
+df <- merge(df, economy[, c("key", "gdp", "gdp_per_capita")], by=c("key","key")) # NA's match
+```
+
+```{r}
+# check if negative, zero, or na values exist
+df[df$gdp <= 0, ] 
+df[df$gdp_per_capita <= 0, ] 
+df[df$population <= 0, ] 
+df[is.na(df$gdp), ] 
+df[is.na(df$gdp_per_capita), ] 
+df[is.na(df$population), ] 
+```
+
+```{r}
+# load political data
+political = read.csv("data/political.csv")
+
+# trim extra white space
+trim <- function (x) gsub("^\\s+|\\s+$", "", x)
+political$Name <- trim(political$Name)
+
+# find difference between country names in df and political data
+setdiff(unique(df$country_name), unique(political$Name))
+
+# find countries whose names need changed
+political[grep(",", political$Name), ]
+
+# change all country names to match
+political[political$Name=="Bahamas, The",]$Name <- "Bahamas"
+political[political$Name=="China, People's Republic of",]$Name <- "China"
+political[political$Name=="Congo, Democratic Republic of the",]$Name <- "Democratic Republic of the Congo"
+political[political$Name=="Congo, Republic of the",]$Name <- "Republic of the Congo"
+political[political$Name=="Gambia, The",]$Name <- "Gambia"
+political[political$Name=="Korea, North",]$Name <- "North Korea"
+political[political$Name=="Korea, South",]$Name <- "South Korea"
+political[political$Name=="United States",]$Name <- "United States of America"
+
+# merge the two data sets
+df <- merge(df, political[, c("Name", "Constitutional.form", "Head.of.state", "Basis.of.executive.legitimacy")], by.x="country_name", by.y="Name") # NA's match
+
+unique(political$Constitutional.form)
+
+df <- rename(df, constitutional_form = Constitutional.form)
+unique(df$constitutional_form)
+
+df <- rename(df, head_of_state = Head.of.state)
+unique(df$head_of_state)
+df[df$head_of_state=="n/a",]$head_of_state <- NA
+
+df <- rename(df, basis_of_executive_legitimacy = Basis.of.executive.legitimacy)
+unique(df$basis_of_executive_legitimacy)
+
+
+# order by date and by country
+df <- df[order(df$country_name,df$date),]
+
+```
+
+
+```{r}
+## lowess smoother
+wrapLowess <- function(data, f) {
+  lowess_fit <- lowess(data, f = f)
+  lowess_fit$y
+}
+
+## moving average
+wrapRollmean <- function(data, k = 6){
+  zoo::rollmean(data, k = k, fill = NA)
+}
+
+df$new_confirmed_smooth = 0
+for (c in unique(df$country_name)){
+  df[which(df$country_name == c),]$new_confirmed_smooth =
+    wrapLowess(df[which(df$country_name == c),]$new_confirmed, 0.05)
+  # wrapRollmean(df[which(df$country_name == c),]$new_confirmed)
+}
+
+df$new_deceased_smooth = 0
+for (c in unique(df$country_name)){
+  df[which(df$country_name == c),]$new_deceased_smooth =
+    wrapLowess(df[which(df$country_name == c),]$new_deceased, 0.05)
+  # wrapRollmean(df[which(df$country_name == c),]$new_deceased)
+}
+
+df$new_confirmed_pop_smooth = 0
+for (c in unique(df$country_name)){
+  df[which(df$country_name == c),]$new_confirmed_pop_smooth =
+    wrapLowess(df[which(df$country_name == c),]$new_confirmed_pop, 0.05)
+  # wrapRollmean(df[which(df$country_name == c),]$new_confirmed)
+}
+
+df$new_deceased_pop_smooth = 0
+for (c in unique(df$country_name)){
+  df[which(df$country_name == c),]$new_deceased_pop_smooth =
+    wrapLowess(df[which(df$country_name == c),]$new_deceased_pop, 0.05)
+  # wrapRollmean(df[which(df$country_name == c),]$new_deceased)
+}
+
+country = "United States of America"
+plot(df$new_confirmed[df$country_name==country], type="l")
+lines(rollmean(df$new_confirmed[df$country_name==country],5),col='blue')
+lines(df$new_confirmed_smooth[df$country_name==country],col='green')
+lines(df$new_confirmed_pop_smooth[df$country_name==country],col='green')
+
+country = "United States of America"
+plot(df$new_confirmed_pop[df$country_name==country], type="l")
+lines(df$new_confirmed_pop_smooth[df$country_name==country],col='blue')
+
+
+country = "Argentina"
+plot(df$new_confirmed[df$country_name==country], type="l")
+lines(df$new_confirmed_smooth[df$country_name==country],col='red')
+
+country = "Argentina"
+plot(df$new_confirmed_pop[df$country_name==country], type="l")
+lines(df$new_confirmed_pop_smooth[df$country_name==country],col='blue')
+
+df$new_confirmed[df$country_name==country]
+df[df$country_name==country,]
+
+```
+
+```{r}
+df2 <- df[df$country_name %in%
+            c("Argentina", "Germany", "Australia", "United Kingdom", "Italy", "New Zealand",
+"United States", "Spain", "Singapore", "India", "Japan", "Norway", "United States of America")
+            ,]
+
+g = ggplot(df2, aes(x = date, y = new_confirmed, 
+                            group = country_name, color = country_name)) +
+  geom_line(lwd = 1) +
+  theme_bw() +
+  ylab("Number of __") +
+  labs(color = "Country") +
+  ggtitle("title")
+
+plotly::ggplotly(g)
+
+
+g = ggplot(df2, aes(x = date, y = new_confirmed_smooth, 
+                            group = country_name, color = country_name)) +
+  geom_line(lwd = 1) +
+  theme_bw() +
+  ylab("Number of __") +
+  labs(color = "Country") +
+  ggtitle("title")
+
+plotly::ggplotly(g)
+
+g = ggplot(df2, aes(x = date, y = new_confirmed_pop_smooth, 
+                            group = country_name, color = country_name)) +
+  geom_line(lwd = 1) +
+  theme_bw() +
+  ylab("Number of __") +
+  labs(color = "Country") +
+  ggtitle("title")
+
+plotly::ggplotly(g)
+```
+
+
+```{r}
+# write.csv(df,"data/data_smoothed_standardised.csv", row.names = FALSE)
+```
+
